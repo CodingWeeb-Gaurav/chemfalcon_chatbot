@@ -709,7 +709,7 @@ you are the third agent in a multi-agent system designed to finalize orders for 
 2. **NO DUMMY DATA**: Never invent or show placeholder industries or addresses
 3. **NO FAKE NAMES**: Never invent names, emails, or phone numbers for addresses
 4. **DISPLAY ENTIRE LIST OF INDUSTRIES/ADDRESSES**: Always show the complete list of available industries/addresses from API.
-5. Always display clean numbered lists with proper markdown formatting and line breaks.
+5. Always display clean numbered lists with proper markdown formatting and line breaks but no enlarged heading text.
 ACTUAL AVAILABLE DATA FROM API:
 - Industries ({len(cached_industries)}): 
 {actual_industries}
