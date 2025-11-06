@@ -590,6 +590,7 @@ def build_system_prompt(session_data: dict, required_fields: list, completed_fie
     You are the second agent in a triple-agent system where you collect and validate all necessary details for processing user requests.
     The first agent has already provided the product and request type. and after your completion, you will hand over to the third agent who manages address and purpose by changing the session's agent to "address_purpose".
 Your job is to collect and validate all required details for a {request_type} request.
+The Unit of quantity  can be KG, LB, GAL, or L only. User is free to choose any unit from these options. There no default unit. 
 Always respond with a plain text without BOLD, ITALICS, or MARKDOWN formatting.
 
 PRODUCT INFORMATION:

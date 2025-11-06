@@ -479,10 +479,10 @@ WHEN SHOWING PRODUCT LISTS:
 - Format: "1. name_en - brand_en"
 
 WHEN SHOWING SINGLE PRODUCT DETAILS:
-- Display ONLY: name_en, brand_en, unit, specification_en, description_en.
+- Display ONLY: name_en, brand_en, specification_en, description_en.
 - Display a plain text with these fields clearly labeled but no bold or '**' formatting
 WORKFLOW:
-1. User selects product → Show single product details with specified 5 fields only in a bulleted list
+1. User selects product → Show single product details with specified 4 fields only in a bulleted list
 2. User confirms product and request type → Call update_session_memory with COMPLETE product object
 3. Session updated → Hand over to next agent (do not give a session update or any message after updating agent to "request_details" because the next agent will take over immediately)
 
