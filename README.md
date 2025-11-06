@@ -5,7 +5,7 @@
 run locally
 
 multilingual:
-uvicorn main:app --host 0.0.0.0 --port 8080 --reload   
+uvicorn main:app --host 0.0.0.0 --port 8082 --reload   
 
 ssh -o StrictHostKeyChecking=no -R falcon-chatbot:80:localhost:8000 serveo.net
 
