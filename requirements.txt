@@ -11,3 +11,5 @@ aiohttp>=3.9.1
 certifi>=2023.11.17
 python-multipart>=0.0.6
 phonenumbers
+# the library for phone number validation works for most numbers 
+# but since this is an external library, some edge cases may not be covered.
