@@ -433,8 +433,9 @@ def build_system_prompt(session_data: dict, language: str = 'en') -> str:
 You are the first agent in a triple-agent system where you handle product searches and selections. After your completion, you will hand over to the second agent who collects request details by changing the session's agent to "request_details".
 CURRENT CACHED PRODUCT DATA:
 {cached_data}
-if the user gives a new product search query, use the fetch_inventory_query tool to get fresh results. 
-you can only take the data of product and request, any other details like quantity price address purpose will be handled by the upcoming agents.
+if user gives another product or keyword which is not present in cached data or if the user gives a new product search query, 
+tell the user that 'you can search for the new product if you confirm in message "search for <new_product>", but that will delete existing products data to choose from'. if user confirms and asks to search again, use the fetch_inventory_query tool to get fresh results. 
+you can only take the data of product and request type, any other details like quantity price address purpose will be handled by the upcoming agents.
 if user tells you the details of quantity, unit, contact details, address, industry or anything else unrelated to product and request you should ignore them and tell the user that those details will be handled by the next agents.
 
 CRITICAL RULES FOR SESSION UPDATES:

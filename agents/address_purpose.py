@@ -52,6 +52,21 @@ async def fetch_and_cache_data(session_data: dict):
     # Mark as fetched
     session_data["_cached_data_fetched"] = True
 
+# -------------------------------------------------
+# 🔁 Function: Refresh User Addresses
+# -------------------------------------------------
+async def refresh_user_addresses(session_data):
+    """
+    Re-fetches user addresses from the API if the user has added or updated them.
+    """
+    try:
+        print("🔁 Refreshing user addresses...")
+        session_data["_cached_data_fetched"] = False  # Force a re-fetch next time
+        await fetch_and_cache_data(session_data)
+        return {"status": "success", "message": "Addresses refreshed successfully."}
+    except Exception as e:
+        print(f"❌ Error refreshing addresses: {e}")
+        return {"status": "error", "message": str(e)}
 
 async def handle_address_purpose(user_input: str, session_data: dict):
     """
@@ -241,6 +256,22 @@ async def process_address_purpose(user_input: str, session_data: dict):
             {
                 "type": "function",
                 "function": {
+                    "name": "fetch_and_cache_data",
+                    "description": "Fetches and caches user addresses and industries for session use.",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "refresh_user_addresses",
+                    "description": "Re-fetches user addresses from the API if user has updated or added a new one.",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "show_final_confirmation",
                     "description": "Display all collected data including address and industry for final confirmation. Auto-call this when both industry and address are selected.",
                     "parameters": {
@@ -340,7 +371,14 @@ async def process_address_purpose(user_input: str, session_data: dict):
                         "role": "system",
                         "content": "AUTO-SHOW ADDRESSES: Industry selected. Now display ONLY REAL addresses from API as numbered list immediately and ask user to select one."
                     })
-                
+            
+            elif function_name == "refresh_user_addresses":
+                refresh_result = await refresh_user_addresses(session_data)
+                follow_up_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(refresh_result, default=str)
+                })                
             elif function_name == "select_address":
                 address_object = function_args.get("address_object")
                 cached_addresses = session_data.get("_cached_addresses", [])
@@ -546,7 +584,7 @@ def get_cached_addresses(session_data: dict):
 async def fetch_industries():
     """Fetch available industries from API - NO FALLBACKS"""
     print("🔍 Fetching industries from API...")
-    url = "https://nischem.com:2053/category/getAllIndustries"
+    url = "https://chemfalcon.com:2053/category/getAllIndustries"
     headers = {
         "Content-Type": "application/json",
         "x-user-type": "Buyer",
@@ -631,7 +669,7 @@ async def fetch_user_addresses(session_data: dict):
     
     print(f"🔍 Using userAuth token from session: {user_auth_token[:20]}...")
     
-    url = "https://nischem.com:2053/user/getAddresses"
+    url = "https://chemfalcon.com:2053/user/getAddresses"
     headers = {
         "x-auth-token-user": user_auth_token,  # Use the actual user token
         "Content-Type": "application/json",
@@ -729,6 +767,9 @@ ADDRESS SELECTION:
 - When user selects address by number, ALWAYS use the complete address object from get_cached_addresses
 - NEVER invent contact details - use only what's in the address object from API
 - If address object has missing fields, use what's available
+- If the address number is invalid or ambiguous, ask user to provide the same existing address in text. If user provides address text, try to match with available addresses from API.
+- If user provides an address that is not in the available list, politely inform them that only pre-fetched addresses can be used. Or they can go to profile --> addresses to add new addresses without refreshing the session. and come back to agent and tell the AI Agent specifically to 'fetch updated addresses'.
+- If user tells you to update fetched addresses or something similar, use refresh_user_addresses tool and show the updated list.
 
 PROHIBITED:
 - ❌ Never show fake addresses like "123 Business Bay", "Priya Mehta", "Rahul Sharma"
