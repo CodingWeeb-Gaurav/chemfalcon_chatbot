@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 from openai import AsyncOpenAI
 import os
+import phonenumbers
 from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
@@ -161,9 +162,9 @@ async def process_request_details(user_input: str, session_data: dict):
                                     "type": "string",
                                     "description": "Value to validate"
                                 },
-                                "request_type": {  # ADD THIS NEW PARAMETER
+                                "request_type": {  
                                     "type": "string", 
-                                    "description": "Type of request (sample, order, quote) for validation rules"
+                                    "description": "Type of request (sample, order, quote, ppr) for validation rules"
                                 }
                             },
                             "required": ["field_name", "field_value"]  # request_type is optional
@@ -470,7 +471,7 @@ def validate_selection(args: dict) -> dict:
     selected_value = args["selected_value"].strip()
     
     options_map = {
-        "unit": ["KG", "TON"],
+        "unit": ["KG", "GAL", "L", "LBS"],
         "incoterm": ["Ex Factory", "Deliver to Buyer Factory"],
         "mode_of_payment": ["LC", "TT", "Cash"],
         "packaging_pref": ["Bulk Tanker", "PP Bag", "Jerry Can", "Drum"]
@@ -497,31 +498,24 @@ def validate_selection(args: dict) -> dict:
             "allowed_options": allowed_options
         }
 
+
 def validate_phone(args: dict) -> dict:
-    """Validate phone number format for different countries"""
+    """Validate international phone numbers - minimal version"""
     phone = args["phone"].strip()
     
-    patterns = [
-        r'^\+?[1-9]\d{1,14}$',
-        r'^\+?[\d\s\-\(\)]{10,}$',
-        r'^[\d\(\)\-\s\+]{10,}$'
-    ]
-    
-    clean_phone = re.sub(r'[\s\-\(\)]', '', phone)
-    
-    is_valid = any(re.match(pattern, clean_phone) for pattern in patterns) and len(clean_phone) >= 10
-    
-    if is_valid:
+    try:
+        parsed_number = phonenumbers.parse(phone, None)
+        is_valid = phonenumbers.is_valid_number(parsed_number)
+        
         return {
-            "is_valid": True,
-            "message": "Phone number format is valid",
-            "cleaned_number": clean_phone
+            "is_valid": is_valid,
+            "message": "Phone number is valid" if is_valid else "Invalid phone number format"
         }
-    else:
+            
+    except phonenumbers.NumberParseException:
         return {
             "is_valid": False,
-            "message": "Please enter a valid phone number (at least 10 digits, international format supported)",
-            "examples": "+1234567890, 123-456-7890, (123) 456-7890"
+            "message": "Unable to parse phone number"
         }
 
 def calculate_expected_price(args: dict) -> dict:
@@ -567,7 +561,7 @@ def get_required_fields(request_type: str) -> list:
         "order":  ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],
         "sample": ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],
         "quote":  ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],  
-        # "ppr":    ["unit", "quantity", "price_per_unit", "expected_price", "delivery_date"]  # PPR has different requirements
+        "ppr":    ["unit", "quantity", "price_per_unit", "expected_price", "delivery_date"]  # PPR has different requirements
     }
     
     # Return fields for the specific request type, or base fields if not found
@@ -612,10 +606,10 @@ ALL REQUIRED FIELDS for {request_type}:
 # ... rest of your existing prompt remains the same ...
 
 FIELD OPTIONS: 
-- Unit: KG, TON
-- Incoterm: Ex Factory, Deliver to Buyer Factory  
-- Payment: LC, TT, Cash
-- Packaging: Bulk Tanker, PP Bag, Jerry Can, Drum
+- Unit: KG, LB, GAL, L
+- Incoterm: Ex Factory (Former Factory or Delivery From Factory), Deliver to Buyer Factory  
+- Payment: LC (Letter of Credit), TT (Telegraphic transfer or Bank Transfer), Cash
+- Packaging: Bulk Tanker Truck, PP Bag, Jerry Can, Drum
 
 CURRENT PROGRESS:
 Completed: {len(completed_fields)}/{len(required_fields)} fields
@@ -656,13 +650,13 @@ def format_fields_info(required_fields: list, session_data: dict) -> str:
     request_type = session_data.get("request", "").lower()
     
     field_descriptions = {
-        "unit": "Unit of measurement (KG or TON)",
+        "unit": "Unit of measurement (KG, GAL, LB, L)",
         "price_per_unit": "Your offered price per unit",
         "expected_price": "Total expected price (auto-calculated)",
-        "phone": "Contact phone number (international format: +91XXXXXXXXXX)",
-        "incoterm": "Delivery terms (Ex Factory or Deliver to Buyer Factory)",
-        "mode_of_payment": "Payment method (LC, TT, or Cash)",
-        "packaging_pref": "Packaging preference (Bulk Tanker, PP Bag, Jerry Can, or Drum)",
+        "phone": "Contact phone number (international format: +(country code)(phone number))",
+        "incoterm": "Delivery terms (Ex Factory (delivery from seller factory) or Deliver to Buyer Factory)",
+        "mode_of_payment": "Payment method (LC (letter of credit), TT (telegraphic transfer), or Cash)",
+        "packaging_pref": "Packaging preference (Bulk Tanker Truck, PP Bag, Jerry Can, or Drum)",
         "delivery_date": f"Delivery date (after {datetime.now().strftime('%Y-%m-%d')}, YYYY-MM-DD format)"
     }
     

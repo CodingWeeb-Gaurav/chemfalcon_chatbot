@@ -132,7 +132,7 @@ async def place_order_request(session_data: dict):
     print(f"   - shippingContactNumber: {product_details.get('phone', 'NOT SET')}")
     
     # API endpoint
-    url = "https://nischem.com:2053/order/placeOrder"
+    url = "https://chemfalcon.com:2053/order/placeOrder"
     headers = {
         "x-auth-token-user": user_auth_token,  # Use the actual user token from session
         "x-user-type": "Buyer"

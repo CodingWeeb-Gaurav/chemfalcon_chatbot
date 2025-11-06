@@ -1,0 +1,35 @@
+Limitations of first agent
+
+1. Purpose
+a. Getting the 'keyword' (product name) from the user
+b. Getting the request type (order, sample, ppr, quotation) from the user
+
+1.5 Model
+A code named 'Agent manager' makes an empty mongoDB with the 1st agent's name (to route all messages to first agent)
+It has 2 fields. Product and Request (which will be taken by the first agent)
+When these 2 details are taken, the agent name is updated to 2nd agent and 1st agent's work is over.
+
+2. Working.
+
+a. initially the chatbot has no data of any product or category or anything else 
+b. User does any message, agent tries to find the 'keyword' or product name from his statement.
+c. Calls the GetQueryResult API with that keyword and that API saves an JSON in the mongoDB.
+d. Now AI agent has data related to products related to that Keyword.
+e. AI agent shows the ordered list of results in ProductName - Brandname Format
+f. When User types a index number, Agent looks into the data and retrieves the details of that product (specification, description etc)
+g. If user gives other keyword or product name, the API is triggered again and the data of new product is fetched and old data is erased
+h. now user can see only from the new product list, asking for any product from previous list will give wrong results.
+i. User looks through different products of the saved data, and AI shows details of each until user finalises a product
+j. Then AI asks for what does user want to request (sample, quotation, order, ppr)
+k. After confirmation, AI shows final message asking for confirmation with product details and request type
+l. after final confirmation, AI saves product details in database along with the request_type for the next agent
+m. AI changes the current_agent to name of next agent so now all messages go to next agent now, the product and request cannot be changed.
+
+
+Limitations,
+1. Agent has empty initial memory and it only knows to call fetch API when a product name is given
+2. Agent cannot take other details like address, quantity, price per quantity, etc. These are done by next agents.
+3. Agent does not have any list of category or sub category of products. Because there is no API and adding the workflow very complicated and hallucination.
+4. After final confirmation, AI agent switches the route of message, so when next agent takes over, the request and product cannot be changed, refresh to start a new session
+5. No agent can change anything in user profile, because they do not have the API for that. In case if we add that API and purpose, the Agent will hallucinate and mix the data.
+6. Agent has no other data or purpose other than taking the product and request.

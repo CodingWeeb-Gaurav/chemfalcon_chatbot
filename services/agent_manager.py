@@ -16,36 +16,36 @@ logger = logging.getLogger(__name__)
 FIELD_METADATA = {
     "unit": {
         "type": "select",
-        "options": ["KG", "TON"],
-        "required_for": ["Order", "Sample", "Quote"],  # CHANGED HERE
+        "options": ["KG", "GAL", "LB", "L"],
+        "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
         "description": "Unit of measurement for the product"
     },
     "quantity": {
         "type": "number", 
         "validation": "positive_number",
-        "required_for": ["Order", "Sample", "Quote"],  # CHANGED HERE
+        "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
         "description": "Quantity required (must be positive number), greater than or equal to minQuantity and less than available stock" 
     },
     "price_per_unit": {
         "type": "number",
         "validation": "positive_number", 
-        "required_for": ["Order", "Sample", "Quote"],  # CHANGED HERE
+        "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
         "description": "Price per unit (must be positive number)"
     },
     "expected_price": {
         "type": "calculated",
         "calculation": "quantity * price_per_unit",
-        "required_for": ["Order", "Sample", "Quote"],  # CHANGED HERE
+        "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
         "description": "Automatically calculated total price"
     },
     "address": {
         "type": "select",
         "options": "fetch_from_user_account via API",
-        "required_for": ["Order", "Sample", "Quote"],  # CHANGED HERE
+        "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 3,
         "description": "Delivery address (choose from saved addresses)"
     },
@@ -80,7 +80,7 @@ FIELD_METADATA = {
     "delivery_date": {
         "type": "date",
         "validation": "future_date",
-        "required_for": ["Order", "Sample","Quote"],  # CHANGED HERE
+        "required_for": ["Order", "Sample","Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
         "description": "Delivery date (must be after today)"
     },

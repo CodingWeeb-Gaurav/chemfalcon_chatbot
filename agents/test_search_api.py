@@ -2,7 +2,7 @@ import requests
 import json
 
 def test_chatbot():
-    url = "https://nathaly-purest-ariella.ngrok-free.dev/api/chat/"
+    url = ""
     
     payload = {
         "sessionId": "test-session-123",

@@ -19,7 +19,7 @@ client = AsyncOpenAI(
 )
 
 # Allowed units for order placement
-ALLOWED_UNITS = ["KG", "TON"]
+ALLOWED_UNITS = ["KG", "GAL", "LB", "L"]
 
 
 async def fetch_inventory_query(query: str, session_data: dict):
@@ -68,7 +68,10 @@ async def fetch_inventory_query(query: str, session_data: dict):
             async with session.patch(url, headers=headers, json=data, ssl=False) as response:
                 result = await response.json()
                 print(f"✅ API call successful, found {len(result.get('results', {}).get('products', []))} products")
-                
+                if "results" in result:
+                    result["results"].pop("sellers", None)
+                    result["results"].pop("rawResult", None)
+
                 # Only cache if we actually got products
                 if result.get("results", {}).get("products"):
                     # Store in session cache instead of global
@@ -266,8 +269,8 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
                             },
                             "request": {
                                 "type": "string",
-                                "description": "Request type: 'sample', 'quotation', or 'order' ONLY",
-                                "enum": ["Sample", "Quote", "order"]
+                                "description": "Request type: 'sample', 'quotation', 'ppr (purchase price request)' or 'order' ONLY",
+                                "enum": ["Sample", "Quote", "PPR", "Order"]
                             },
                             "agent": {
                                 "type": "string", 
@@ -439,7 +442,7 @@ CRITICAL RULES FOR SESSION UPDATES:
 - The product_details MUST include all fields, especially the _id field
 - Do NOT create a new object or modify the fields - use the exact object from cached data
 - Find the complete product object by matching product_id or list_number from the cached data
-- After updating session to "request_details", you cannot make any changes in selected product or request type. If the user asks to update those, politely refuse and tell them to refresh the session to start a new order.
+- After updating session to "request_details", you cannot make any changes in selected product or request type. If the user asks to update those, politely refuse and tell them to refresh the session.
 HOW TO GET COMPLETE PRODUCT_DETAILS FOR SESSION UPDATE:
 1. When user confirms a product, note the product_id (e.g., "68f9da20c7fe40d80722c436")
 2. Find the matching product in the cached data above by _id field
