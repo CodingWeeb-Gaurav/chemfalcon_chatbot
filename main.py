@@ -13,7 +13,7 @@ origins = [
     "http://localhost:3001",
     "http://0.0.0.0:3001",
     "https://nathaly-purest-ariella.ngrok-free.dev/",
-    "https://chemfalcon.com/"
+    "https://chemfalcon.com/",
     "http://107.20.145.214:6001",
 ]
 
