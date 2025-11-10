@@ -1,4 +1,3 @@
-
 # agents/address_purpose.py
 import asyncio
 import json
@@ -20,53 +19,56 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-# Authentication token
-# AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OGQ2MTViMDNlZWUyNGYyNmM2MjhmNjUiLCJpYXQiOjE3NjEzMTAxMzcsImV4cCI6MTc2OTA4NjEzN30.h0rKTjeHWHHvCfWojvBMm1KweDR06CfxOt_3QmL6v9A"
+async def get_final_confirmation_text(session_data: dict, session_updates: dict) -> str:
+    """Generate final confirmation text"""
+    # Apply updates temporarily for confirmation
+    temp_session = session_data.copy()
+    for key, value in session_updates.items():
+        temp_session[key] = value
+    
+    confirmation = show_final_confirmation(temp_session, True)
+    
+    if confirmation["status"] == "ready":
+        summary = confirmation["order_summary"]
+        text = "**Please Confirm Your Request**\n\n"
+        text += f"**Product:** {summary['product']['name']}\n"
+        text += f"**Industry:** {summary['industry_use']}\n"
+        text += f"**Address:** {summary['delivery']['address']}\n"
+        text += f"**Quantity:** {summary['quantity_details']['quantity']} {summary['quantity_details']['unit']}\n"
+        text += f"**Total Price:** {summary['quantity_details']['total_price']}\n\n"
+        text += "Please type 'confirm' to place the order or 'change industry'/'change address' to make changes."
+        return text
+    else:
+        return "Please review your order details and confirm if everything is correct."
 
 async def fetch_and_cache_data(session_data: dict):
     """Fetch addresses and industries and cache them in session data"""
     print("🔄 Fetching and caching addresses and industries...")
     
     # Fetch addresses with the actual user token
-    addresses_result = await fetch_user_addresses(session_data)  # Pass session_data here
+    addresses_result = await fetch_user_addresses(session_data)
     if addresses_result.get("status") == "success":
         session_data["_cached_addresses"] = addresses_result["addresses"]
-        print(f"✅ Cached {len(addresses_result['addresses'])} REAL addresses")
+        print(f" Cached {len(addresses_result['addresses'])} REAL addresses")
         for addr in addresses_result["addresses"]:
             print(f"   - {addr.get('addressLine', 'Unknown')}")
     else:
         session_data["_cached_addresses"] = []
-        print(f"❌ Failed to fetch addresses: {addresses_result.get('error', 'Unknown error')}")
+        print(f"Failed to fetch addresses: {addresses_result.get('error', 'Unknown error')}")
     
     # Fetch industries (no auth needed)
     industries_result = await fetch_industries()
     if industries_result.get("status") == "success":
         session_data["_cached_industries"] = industries_result["industries"]
-        print(f"✅ Cached {len(industries_result['industries'])} REAL industries")
+        print(f"Cached {len(industries_result['industries'])} REAL industries")
         for industry in industries_result["industries"]:
             print(f"   - {industry.get('name_en', 'Unknown')}")
     else:
         session_data["_cached_industries"] = []
-        print(f"❌ Failed to fetch industries: {industries_result.get('error', 'Unknown error')}")
+        print(f" Failed to fetch industries: {industries_result.get('error', 'Unknown error')}")
     
     # Mark as fetched
     session_data["_cached_data_fetched"] = True
-
-# -------------------------------------------------
-# 🔁 Function: Refresh User Addresses
-# -------------------------------------------------
-async def refresh_user_addresses(session_data):
-    """
-    Re-fetches user addresses from the API if the user has added or updated them.
-    """
-    try:
-        print("🔁 Refreshing user addresses...")
-        session_data["_cached_data_fetched"] = False  # Force a re-fetch next time
-        await fetch_and_cache_data(session_data)
-        return {"status": "success", "message": "Addresses refreshed successfully."}
-    except Exception as e:
-        print(f"❌ Error refreshing addresses: {e}")
-        return {"status": "error", "message": str(e)}
 
 async def handle_address_purpose(user_input: str, session_data: dict):
     """
@@ -153,9 +155,40 @@ async def process_address_purpose(user_input: str, session_data: dict):
         messages.append({"role": "user", "content": entry["user"]})
         messages.append({"role": "assistant", "content": entry["agent"]})
     
+    # Check if user is selecting address by number
+    user_input_clean = user_input.strip()
+    cached_addresses = session_data.get("_cached_addresses", [])
+    
+    # 🔥 FIX: If user input is just a number and we're expecting address selection
+    if (user_input_clean.isdigit() and 
+        session_data.get("industry_id") and 
+        not session_data.get("address") and
+        cached_addresses):
+        
+        address_number = int(user_input_clean)
+        if 1 <= address_number <= len(cached_addresses):
+            print(f"🎯 User selected address by number: {address_number}")
+            # Auto-select the address without showing list again
+            selected_address = cached_addresses[address_number - 1]
+            session_updates = {"address": selected_address}
+            
+            # Add to history
+            session_data.setdefault("history", []).append({
+                "user": user_input,
+                "agent": f"Address selected: {selected_address.get('addressLine', 'Unknown')}"
+            })
+            
+            # Show final confirmation
+            final_response = f" Address selected: {selected_address.get('addressLine', 'Unknown')}\n\n"
+            final_response += await get_final_confirmation_text(session_data, session_updates)
+            
+            return {
+                "response": final_response,
+                "session_updates": session_updates
+            }
+    
     # Check if we need to auto-show data (first interaction or user asking for data)
     cached_industries = session_data.get("_cached_industries", [])
-    cached_addresses = session_data.get("_cached_addresses", [])
     
     should_auto_show = (
         len(history) == 0 or  # First interaction
@@ -251,22 +284,6 @@ async def process_address_purpose(user_input: str, session_data: dict):
                         },
                         "required": ["address_object"]
                     }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "fetch_and_cache_data",
-                    "description": "Fetches and caches user addresses and industries for session use.",
-                    "parameters": { "type": "object", "properties": {} }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "refresh_user_addresses",
-                    "description": "Re-fetches user addresses from the API if user has updated or added a new one.",
-                    "parameters": { "type": "object", "properties": {} }
                 }
             },
             {
@@ -372,13 +389,6 @@ async def process_address_purpose(user_input: str, session_data: dict):
                         "content": "AUTO-SHOW ADDRESSES: Industry selected. Now display ONLY REAL addresses from API as numbered list immediately and ask user to select one."
                     })
             
-            elif function_name == "refresh_user_addresses":
-                refresh_result = await refresh_user_addresses(session_data)
-                follow_up_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(refresh_result, default=str)
-                })                
             elif function_name == "select_address":
                 address_object = function_args.get("address_object")
                 cached_addresses = session_data.get("_cached_addresses", [])
@@ -736,18 +746,32 @@ def build_system_prompt(session_data: dict) -> str:
     cached_addresses = session_data.get("_cached_addresses", [])
     
     # Show actual available data in prompt
-    actual_industries = "\n".join([f"- {ind.get('name_en', 'Unknown')}" for ind in cached_industries[:5]])
-    actual_addresses = "\n".join([f"- {addr.get('addressLine', 'Unknown')}" for addr in cached_addresses[:3]])
+    actual_industries = "\n".join([f"- {ind.get('name_en', 'Unknown')}" for i, ind in enumerate(cached_industries, start=1)])
+    actual_addresses = "\n".join([f"- {addr.get('addressLine', 'Unknown')}" for i, addr in enumerate(cached_addresses, start=1)])
     
     prompt = f"""You are the **Finalization Agent** for chemical product orders.
-you are the third agent in a multi-agent system designed to finalize orders for chemical products.
-    
-🚨 **CRITICAL RULES - NO HALLUCINATION:**
-1. **ONLY USE REAL DATA**: Only show industries/addresses that were successfully fetched from API
-2. **NO DUMMY DATA**: Never invent or show placeholder industries or addresses
-3. **NO FAKE NAMES**: Never invent names, emails, or phone numbers for addresses
-4. **DISPLAY ENTIRE LIST OF INDUSTRIES/ADDRESSES**: Always show the complete list of available industries/addresses from API.
-5. Always display clean numbered lists with proper markdown formatting and line breaks but no enlarged heading text.
+
+🚨 **CRITICAL RULES - NO REPETITION:**
+1. **SHOW LISTS ONLY ONCE**: Never show the same list multiple times
+2. **IMMEDIATE SELECTION**: When user provides a number, immediately accept it as selection
+3. **NO LIST REFRESHING**: Don't re-show lists after valid selection
+
+WORKFLOW:
+1. Show industries list ONCE → wait for number selection
+2. Show addresses list ONCE → wait for number selection  
+3. Show final confirmation → wait for confirmation
+4. Place order when confirmed
+
+ADDRESS SELECTION FIX:
+- When user responds with just a number like "2", IMMEDIATELY accept it as address selection
+- DON'T show the address list again after valid number selection
+- Move directly to final confirmation after address selection
+- Only show lists when they haven't been shown yet or selection is invalid
+
+CURRENT STATUS:
+- Industry selected: {'Yes' if session_data.get('industry_id') else 'No'}
+- Address selected: {'Yes' if session_data.get('address') else 'No'}
+
 ACTUAL AVAILABLE DATA FROM API:
 - Industries ({len(cached_industries)}): 
 {actual_industries}
@@ -755,30 +779,12 @@ ACTUAL AVAILABLE DATA FROM API:
 - Addresses ({len(cached_addresses)}):
 {actual_addresses}
 
-WORKFLOW:
-1. Auto-show REAL industries (get_cached_industries)
-2. User selects industry → store with select_industry
-3. Auto-show REAL addresses (get_cached_addresses) 
-4. User selects address → store COMPLETE REAL address object with select_address
-5. Auto-show final confirmation (show_final_confirmation)
-6. Place order when user confirms (place_order_final)
-7. After succesful completion, tell the user to refresh the page if he wants to place a new request. Because you cannot do anything more after the order is placed.
-ADDRESS SELECTION:
-- When user selects address by number, ALWAYS use the complete address object from get_cached_addresses
-- NEVER invent contact details - use only what's in the address object from API
-- If address object has missing fields, use what's available
-- If the address number is invalid or ambiguous, ask user to provide the same existing address in text. If user provides address text, try to match with available addresses from API.
-- If user provides an address that is not in the available list, politely inform them that only pre-fetched addresses can be used. Or they can go to profile --> addresses to add new addresses without refreshing the session. and come back to agent and tell the AI Agent specifically to 'fetch updated addresses'.
-- If user tells you to update fetched addresses or something similar, use refresh_user_addresses tool and show the updated list.
-
 PROHIBITED:
-- ❌ Never show fake addresses like "123 Business Bay", "Priya Mehta", "Rahul Sharma"
-- ❌ Never invent email addresses or phone numbers
-- ❌ Never create placeholder addresses
-- ❌ Only use data from get_cached_industries and get_cached_addresses
-- ❌ You are unable to update any details except industry and address, if user asks to change other details, politely refuse and tell them to refresh the session to start a new order.
-- ❌ After an order is placed successfully, you cannot make any more changes or place new orders in the same session.
-START by showing ONLY REAL industries immediately."""
+- ❌ Never show lists multiple times
+- ❌ Never ask for selection after valid number provided
+- ❌ Never invent data
+
+Follow the workflow exactly and accept number selections immediately."""
 
     return prompt
 
@@ -818,7 +824,7 @@ def show_final_confirmation(session_data: dict, confirmation_ready: bool):
             "request_type": session_data.get("request", "N/A"),
             "quantity_details": {
                 "quantity": product_details.get("quantity", "N/A"),
-                "unit": product_details.get("unit", "N/A"),
+                "unit": product_details.get("unit", "N/A"),  # ✅ Unit field from user selection
                 "price_per_unit": product_details.get("price_per_unit", "N/A"),
                 "total_price": product_details.get("expected_price", "N/A")
             },

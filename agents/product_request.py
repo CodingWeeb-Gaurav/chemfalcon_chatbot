@@ -18,7 +18,7 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-# Allowed units for order placement
+# Allowed units for order placement (kept for reference, but validation removed)
 ALLOWED_UNITS = ["KG", "GAL", "LB", "L"]
 
 
@@ -48,7 +48,7 @@ async def fetch_inventory_query(query: str, session_data: dict):
             del session_data["cache"]["product_cache"][cache_key]
     
     print(f"🔍 Fetching from API: {query}")
-    url = "https://nischem.com:2053/inventory/getQueryResult"
+    url = "https://chemfalcon.com:2053/inventory/getQueryResult"
     headers = {
         "Content-Type": "application/json",
         "x-user-type": "Buyer", 
@@ -68,11 +68,13 @@ async def fetch_inventory_query(query: str, session_data: dict):
             async with session.patch(url, headers=headers, json=data, ssl=False) as response:
                 result = await response.json()
                 print(f"✅ API call successful, found {len(result.get('results', {}).get('products', []))} products")
+                
+                # Clean up the response - remove rawResult and sellers
                 if "results" in result:
                     result["results"].pop("sellers", None)
-                    result["results"].pop("rawResult", None)
+                    result["results"].pop("rawResult", None)  # Remove rawresult field
 
-                # Only cache if we actually got products
+                # Cache all products regardless of unit
                 if result.get("results", {}).get("products"):
                     # Store in session cache instead of global
                     session_data["cache"]["product_cache"][cache_key] = result
@@ -81,29 +83,20 @@ async def fetch_inventory_query(query: str, session_data: dict):
                     session_data["cache"]["product_list_cache"].clear()
                     session_data["cache"]["current_product_list"].clear()
                     
-                    # Also cache each product individually by ID for quick lookup
-                    valid_products = []
+                    # Cache each product individually by ID for quick lookup
                     for i, product in enumerate(result["results"]["products"]):
                         product_id = product.get("_id")
-                        unit = product.get("unit", "Not specified")
                         
-                        # Check if unit is allowed
-                        if unit.upper() in ALLOWED_UNITS:
-                            if product_id:
-                                # Store complete product data in session cache
-                                session_data["cache"]["product_details_cache"][product_id] = product
-                                # Map list number to product ID in session cache
-                                session_data["cache"]["product_list_cache"][str(i + 1)] = product_id
-                                session_data["cache"]["current_product_list"].append(product)
-                                
-                                print(f"💾 Session-cached product {i+1}: {product.get('name_en')} -> ID: {product_id}")
-                            valid_products.append(product)
+                        if product_id:
+                            # Store complete product data in session cache
+                            session_data["cache"]["product_details_cache"][product_id] = product
+                            # Map list number to product ID in session cache
+                            session_data["cache"]["product_list_cache"][str(i + 1)] = product_id
+                            session_data["cache"]["current_product_list"].append(product)
+                            
+                            print(f"💾 Session-cached product {i+1}: {product.get('name_en')} -> ID: {product_id}")
                     
-                    # Update the result with only valid products
-                    result["results"]["products"] = valid_products
-                    result["results"]["valid_count"] = len(valid_products)
-                    
-                    print(f"📊 Session-cached {len(valid_products)} valid products with list mapping")
+                    print(f"📊 Session-cached {len(result['results']['products'])} products with list mapping")
                     print(f"📋 Session list mappings: {session_data['cache']['product_list_cache']}")
                 else:
                     print("❌ No products found in API response, not caching")
@@ -137,7 +130,7 @@ def get_current_cached_data_for_prompt(session_data: dict, language: str = 'en')
             "list_number": i + 1,
             "name": product.get(name_field, product.get("name_en", "N/A")),
             "brand": product.get(brand_field, product.get("brand_en", "N/A")),
-            "unit": product.get("unit", "N/A"),
+            "unit": product.get("unit", "N/A"),  # Unit may not be present or may be different
             "minQuantity": product.get("minQuantity", "N/A"),
             "maxQuantity": product.get("maxQuantity", product.get("quantity", "N/A")),
             "specification": product.get(specification_field, product.get("specification_en", "N/A")),
@@ -269,7 +262,7 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
                             },
                             "request": {
                                 "type": "string",
-                                "description": "Request type: 'sample', 'quotation', 'ppr (purchase price request)' or 'order' ONLY",
+                                "description": "Request type: 'sample', 'quotation', 'ppr (purchase price request)' or 'order (order of purchase)' ONLY",
                                 "enum": ["Sample", "Quote", "PPR", "Order"]
                             },
                             "agent": {
@@ -315,28 +308,6 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
                 query = function_args["query"]
                 inventory_result = await fetch_inventory_query(query, session_data)
                 
-                # Filter products by allowed units
-                if inventory_result.get("results", {}).get("products"):
-                    valid_products = []
-                    invalid_products = []
-                    
-                    for product in inventory_result["results"]["products"]:
-                        unit = product.get("unit", "Not specified")
-                        
-                        # Check if unit is allowed
-                        if unit.upper() in ALLOWED_UNITS:
-                            valid_products.append(product)
-                        else:
-                            invalid_products.append(product)
-                    
-                    # Update the result with only valid products
-                    inventory_result["results"]["products"] = valid_products
-                    inventory_result["results"]["invalid_products"] = invalid_products
-                    inventory_result["results"]["valid_count"] = len(valid_products)
-                    inventory_result["results"]["invalid_count"] = len(invalid_products)
-                    
-                    print(f"📊 Filtered results: {len(valid_products)} valid products, {len(invalid_products)} invalid products")
-                
                 # Add tool result to messages
                 follow_up_messages.append({
                     "role": "tool",
@@ -378,35 +349,25 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
                         })
                     })
                 else:
-                    # 🔧 Validate unit before proceeding
-                    unit = product_details.get("unit", "").upper()
-                    if unit not in ALLOWED_UNITS:
-                        error_msg = f"Cannot proceed with product '{product_details.get('name_en')}' - unit '{unit}' is not allowed. Allowed units: {', '.join(ALLOWED_UNITS)}"
-                        print(f"❌ {error_msg}")
-                        follow_up_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": json.dumps({"status": "error", "message": error_msg})
+                    # ✅ REMOVED UNIT VALIDATION - users will select unit in next agent
+                    # Collect session updates
+                    session_updates.update(function_args)
+                    print(f"💾 AI updating session with product_id: {product_id}")
+                    print(f"💾 Product name: {function_args.get('product_name')}")
+                    print(f"💾 Request type: {function_args.get('request')}")
+                    print(f"💾 Product details validated successfully")
+                    
+                    # Add tool confirmation
+                    follow_up_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps({
+                            "status": "success", 
+                            "message": "Session updated with complete product data",
+                            "product_id": product_id,
+                            "product_name": function_args.get('product_name')
                         })
-                    else:
-                        # Collect session updates
-                        session_updates.update(function_args)
-                        print(f"💾 AI updating session with product_id: {product_id}")
-                        print(f"💾 Product name: {function_args.get('product_name')}")
-                        print(f"💾 Request type: {function_args.get('request')}")
-                        print(f"💾 Product details validated successfully")
-                        
-                        # Add tool confirmation
-                        follow_up_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": json.dumps({
-                                "status": "success", 
-                                "message": "Session updated with complete product data",
-                                "product_id": product_id,
-                                "product_name": function_args.get('product_name')
-                            })
-                        })  
+                    })  
         
         # Get final AI response with tool results
         final_response_obj = await client.chat.completions.create(
@@ -433,8 +394,7 @@ def build_system_prompt(session_data: dict, language: str = 'en') -> str:
 You are the first agent in a triple-agent system where you handle product searches and selections. After your completion, you will hand over to the second agent who collects request details by changing the session's agent to "request_details".
 CURRENT CACHED PRODUCT DATA:
 {cached_data}
-if user gives another product or keyword which is not present in cached data or if the user gives a new product search query, 
-tell the user that 'you can search for the new product if you confirm in message "search for <new_product>", but that will delete existing products data to choose from'. if user confirms and asks to search again, use the fetch_inventory_query tool to get fresh results. 
+if the user gives a new product search query, use the fetch_inventory_query tool to get fresh results. 
 you can only take the data of product and request type, any other details like quantity price address purpose will be handled by the upcoming agents.
 if user tells you the details of quantity, unit, contact details, address, industry or anything else unrelated to product and request you should ignore them and tell the user that those details will be handled by the next agents.
 
@@ -481,10 +441,16 @@ WHEN SHOWING PRODUCT LISTS:
 WHEN SHOWING SINGLE PRODUCT DETAILS:
 - Display ONLY: name_en, brand_en, specification_en, description_en.
 - Display a plain text with these fields clearly labeled but no bold or '**' formatting
+
 WORKFLOW:
-1. User selects product → Show single product details with specified 4 fields only in a bulleted list
-2. User confirms product and request type → Call update_session_memory with COMPLETE product object
-3. Session updated → Hand over to next agent (do not give a session update or any message after updating agent to "request_details" because the next agent will take over immediately)
+1. User gives product name or keywords → Use fetch_inventory_query to get products and show list with name_en and brand_en only
+2. User selects product by number → Show single product details with specified 5 fields only. Always go through cached data for details for any product user wants to see.
+2.5 User gives another keyword which was not present in cache. Ask user if he wants to see products of that keyword, if user confirms and asks to search again →  if yes use fetch_inventory_query tool again with new keyword.
+3. User selects product → Show single product details with specified 4 fields only in a bulleted list with line breaks.
+4. User confirms product and request type → Call update_session_memory with COMPLETE product object
+5 If User gives unclear or invalid request type -> give him a clear indexed list of 4 options with line breaks: 1. sample, \n 2. quotation (offer price), 3. order (order for purchase), 4. ppr (purchase price request) and ask him to choose by index. If he chooses by name also accept that and update session accordingly.
+6. After user chooses request type and confirms → ask for final confirmation showing both selected product and request type. If confirmed, call update_session_memory with COMPLETE product object
+7. Session updated → Hand over to next agent (do not give a session update or any message after updating agent to "request_details" because the next agent will take over immediately)
 
 TOOLS:
 - fetch_inventory_query: Only for NEW product searches

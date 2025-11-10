@@ -16,6 +16,9 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
+# Allowed units for user selection
+ALLOWED_UNITS = ["KG", "GAL", "LB", "L"]
+
 async def handle_request_details(user_input: str, session_data: dict):
     """
     Agent 2: Request Details Handler - Collects and validates all request details
@@ -106,6 +109,10 @@ async def process_request_details(user_input: str, session_data: dict):
                                     "type": "object",
                                     "description": "All field values extracted from user message",
                                     "properties": {
+                                        "unit": {
+                                            "type": "string",
+                                            "description": "Extracted unit value (KG, GAL, LB, L)"
+                                        },
                                         "quantity": {
                                             "type": "number",
                                             "description": "Extracted quantity value"
@@ -156,7 +163,7 @@ async def process_request_details(user_input: str, session_data: dict):
                                 "field_name": {
                                     "type": "string",
                                     "description": "Name of the field to validate",
-                                    "enum": ["quantity", "phone", "delivery_date", "incoterm", "mode_of_payment", "packaging_pref"]
+                                    "enum": ["unit", "quantity", "phone", "delivery_date", "incoterm", "mode_of_payment", "packaging_pref"]
                                 },
                                 "field_value": {
                                     "type": "string",
@@ -164,7 +171,7 @@ async def process_request_details(user_input: str, session_data: dict):
                                 },
                                 "request_type": {  
                                     "type": "string", 
-                                    "description": "Type of request (sample, order, quote, ppr) for validation rules"
+                                    "description": "Type of request (sample, order (order of purchase), quote (quotation or offer price), ppr (purchase price request)) for validation rules"
                                 }
                             },
                             "required": ["field_name", "field_value"]  # request_type is optional
@@ -270,7 +277,9 @@ async def process_request_details(user_input: str, session_data: dict):
                     for field_name, field_value in extracted_fields.items():
                         if field_value is not None:
                             # Validate each field
-                            if field_name == "quantity":
+                            if field_name == "unit":
+                                result = validate_unit({"unit": field_value})
+                            elif field_name == "quantity":
                                 # PASS THE REQUEST TYPE HERE
                                 result = validate_quantity({"quantity": field_value}, product_details, req_type)
                             elif field_name == "delivery_date":
@@ -286,7 +295,11 @@ async def process_request_details(user_input: str, session_data: dict):
                             
                             # If valid, update session
                             if result.get("is_valid", False):
-                                session_updates[field_name] = field_value
+                                # For unit field, use the normalized value
+                                if field_name == "unit":
+                                    session_updates[field_name] = result.get("normalized_value", field_value)
+                                else:
+                                    session_updates[field_name] = field_value
                                 print(f"✅ Validated and will update {field_name}: {field_value}")              
                     # Calculate expected price if both quantity and price_per_unit are provided
                     if (extracted_fields.get("quantity") and extracted_fields.get("price_per_unit") and
@@ -316,7 +329,9 @@ async def process_request_details(user_input: str, session_data: dict):
                     # GET THE REQUEST TYPE FROM ARGS OR USE THE ONE FROM SESSION
                     req_type = function_args.get("request_type", request_type)
                     
-                    if field_name == "quantity":
+                    if field_name == "unit":
+                        result = validate_unit({"unit": field_value})
+                    elif field_name == "quantity":
                         # PASS THE REQUEST TYPE HERE
                         result = validate_quantity({"quantity": field_value}, product_details, req_type)
                     elif field_name == "delivery_date":
@@ -345,7 +360,22 @@ async def process_request_details(user_input: str, session_data: dict):
                     })
                     
                 elif function_name == "update_validated_field":
-                    session_updates[function_args["field_name"]] = function_args["field_value"]
+                    # For unit field, ensure we're storing the normalized value
+                    if function_args["field_name"] == "unit":
+                        unit_result = validate_unit({"unit": function_args["field_value"]})
+                        if unit_result.get("is_valid", False):
+                            session_updates[function_args["field_name"]] = unit_result.get("normalized_value", function_args["field_value"])
+                        else:
+                            # If invalid, don't update and return error
+                            follow_up_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": json.dumps({"status": "error", "message": f"Invalid unit: {function_args['field_value']}"})
+                            })
+                            continue
+                    else:
+                        session_updates[function_args["field_name"]] = function_args["field_value"]
+                    
                     follow_up_messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -394,7 +424,25 @@ async def process_request_details(user_input: str, session_data: dict):
             "handover_ready": len(pending_fields) == 0
         }
 
-# Validation Functions (keep the same as before)
+# Validation Functions - ADD UNIT VALIDATION
+def validate_unit(args: dict) -> dict:
+    """Validate unit is one of the allowed values"""
+    unit_value = args["unit"].strip().upper()
+    
+    if unit_value in ALLOWED_UNITS:
+        return {
+            "is_valid": True,
+            "message": f"Unit {unit_value} is valid",
+            "normalized_value": unit_value,
+            "allowed_units": ALLOWED_UNITS
+        }
+    else:
+        return {
+            "is_valid": False,
+            "message": f"Invalid unit. Please select from: {', '.join(ALLOWED_UNITS)}",
+            "allowed_units": ALLOWED_UNITS
+        }
+
 def validate_quantity(args: dict, product_details: dict, request_type: str = "") -> dict:
     """Validate quantity against product limits - with special rules for samples"""
     try:
@@ -471,7 +519,7 @@ def validate_selection(args: dict) -> dict:
     selected_value = args["selected_value"].strip()
     
     options_map = {
-        "unit": ["KG", "GAL", "L", "LBS"],
+        "unit": ["KG", "GAL", "LB", "L"],
         "incoterm": ["Ex Factory", "Deliver to Buyer Factory"],
         "mode_of_payment": ["LC", "TT", "Cash"],
         "packaging_pref": ["Bulk Tanker", "PP Bag", "Jerry Can", "Drum"]
@@ -587,53 +635,69 @@ def build_system_prompt(session_data: dict, required_fields: list, completed_fie
         sample_note = "\n🚨 **SPECIAL SAMPLE RULE**: For sample requests, ANY quantity is allowed (even very small amounts like 0.01, 0.5, etc.) as long as it doesn't exceed maximum stock. NO minimum quantity requirement for samples!"
     
     prompt = f"""You are a **Request Details Specialist** for chemical product orders.
-    You are the second agent in a triple-agent system where you collect and validate all necessary details for processing user requests.
-    The first agent has already provided the product and request type. and after your completion, you will hand over to the third agent who manages address and purpose by changing the session's agent to "address_purpose".
+You are the second agent in a triple-agent system where you collect and validate all necessary details for processing user requests.
+The first agent has already provided the product and request type. and after your completion, you will hand over to the third agent who manages address and purpose by changing the session's agent to "address_purpose".
 Your job is to collect and validate all required details for a {request_type} request.
-The Unit of quantity  can be KG, LB, GAL, or L only. User is free to choose any unit from these options. There no default unit. 
-Always respond with a plain text without BOLD, ITALICS, or MARKDOWN formatting.
+Always respond with a markdown formatted message with proper line breaks but no text enlargement (headings).
+
+🚨 **IMPORTANT UNIT POLICY**: 
+- The user MUST select a unit from these 4 options only: KG, GAL, LB, L
+- There is NO default unit from the product data
+- The unit field from the API response is ignored - user chooses freely from the 4 options, you must not convert or assume any unit. If user gives 1200 grams, don't accept it as 1.2 kg. ask them to choose from the 4 options.
+- Always ask for unit selection if not provided
 
 PRODUCT INFORMATION:
 - Product: {session_data.get('product_name', 'N/A')}
 - Request Type: {request_type}
 - Available Stock: {product_details.get('maxQuantity', 'N/A')}
 - Minimum Order: {product_details.get('minQuantity', 'N/A')}
-- Current Unit: {product_details.get('unit', 'N/A')}
 {sample_note}
 
 ALL REQUIRED FIELDS for {request_type}:
 {format_fields_info(required_fields, session_data)}
 
-# ... rest of your existing prompt remains the same ...
-
 FIELD OPTIONS: 
-- Unit: KG, LB, GAL, L
-- Incoterm: Ex Factory (Former Factory or Delivery From Factory), Deliver to Buyer Factory  
-- Payment: LC (Letter of Credit), TT (Telegraphic transfer or Bank Transfer), Cash
-- Packaging: Bulk Tanker Truck, PP Bag, Jerry Can, Drum
+• Unit: KG (kilogram), GAL (gallon), LB (pound), L (liter) (user MUST choose one)
+- Incoterm: 1. Ex Factory (Ex Works or Delivery From Factory) 2. Deliver to Buyer Factory
+- Payment: 1. LC (Letter of Credit), 2. TT (Telegraphic transfer or Bank Transfer), 3. Cash
+- Packaging: 1. Bulk Tanker (in Truck), 2. PP Bag, 3. Jerry Can, 4. Drum
 
 CURRENT PROGRESS:
 Completed: {len(completed_fields)}/{len(required_fields)} fields
 {format_progress(completed_fields, pending_fields, product_details)}
 
-🚀 **NEW BULK PROCESSING STRATEGY:**
+🚀 **BULK PROCESSING STRATEGY:**
 
-1. **FIRST MESSAGE**: Show ALL missing fields and invite user to provide them in any format
+1. **FIRST MESSAGE**: Show ALL missing fields and invite user to provide them in any format.
+example:
+    "To proceed with your request, please provide the following details:
+    - Unit (choose from KG (Kilogram), GAL (Gallon), LB (Pound), L (Liter))
+    - Quantity (between <minQuantity (if request != sample)> and <maxQuantity> KG)
+    - Price per unit (from the unit you selected)
+    - Phone number (must be with country code).
+    - Incoterm (- Ex Factory [Ex Works or Delivery From Factory] \n - Deliver to Buyer Factory)
+    - Mode of payment (- LC (Letter of Credit), \n - TT (Telegraphic Transfer), \n - Cash)
+    - Packaging preference (- Bulk Tanker (in Truck), \n - PP Bag, \n - Jerry Can, \n - Drum)
+    - Delivery date (after <today's date>, in YYYY-MM-DD format)
+    Feel free to provide all the details one by one or in a single message."
 2. **EXTRACT BULK**: Use extract_and_validate_all_fields to process multiple fields from user message
 3. **VALIDATE SILENTLY**: Validate fields in background without asking for confirmation
 4. **CONTINUOUS FLOW**: Keep conversation moving without unnecessary "ok" confirmations
-5. When showing the Field options in any message, use '•' points like 'Incoterm : • Ex Factory • Deliver to Buyer Factory' or 'Payment Method : • LC • TT • Cash'
+5. When showing the Field options in any message, use '•' points like 'Incoterm : • Ex Factory (Delivery from factory or ex works) • Deliver to Buyer Factory' or 'Payment Method : • LC • TT • Cash' or 'Packaging Preference : • Bulk Tanker (in Truck) • PP Bag • Jerry Can • Drum' or 'Unit : • KG (Kilogram) • GAL (Gallon) • LB (Pound) • L (Liter)'
+
 **RESPONSE GUIDELINES:**
 - Start by showing ALL missing fields in first message
+- ALWAYS include Unit in the required fields list if not completed
 - Extract ALL possible values from user messages (even if you asked for specific field)
 - Validate silently in background
 - If validation fails, mention ONLY the invalid fields
 - Keep conversation flowing naturally
-- Calculate expected_price automatically (using the calculate_expected_price tool only) when both quantity and price_per_unit are provided
+- Calculate expected_price automatically when both quantity and price_per_unit are provided
 - When all fields are validated then show the list of all the fields with their values before asking for final confirmation before updating session
 - When all fields complete, ask for check completion_status and hand over
 - You are unable to update any details except the required fields, if user asks to change other details (selected product or request(sample,order, quote)), politely refuse and tell them to refresh the session to start a new order.
 - After changing the session's agent to "address_purpose", you cannot make any more changes or place new orders. Because the third agent has taken over the chat. If the user still asks then tell them to refresh the session to start a new order.
+
 **TOOLS AVAILABLE:**
 - extract_and_validate_all_fields: Extract and validate ALL fields from user message (PREFERRED)
 - validate_individual_field: Validate single field
@@ -651,13 +715,13 @@ def format_fields_info(required_fields: list, session_data: dict) -> str:
     request_type = session_data.get("request", "").lower()
     
     field_descriptions = {
-        "unit": "Unit of measurement (KG, GAL, LB, L)",
+        "unit": "Unit of measurement • KG • GAL • LB • L (choose one)",
         "price_per_unit": "Your offered price per unit",
         "expected_price": "Total expected price (auto-calculated)",
         "phone": "Contact phone number (international format: +(country code)(phone number))",
-        "incoterm": "Delivery terms (Ex Factory (delivery from seller factory) or Deliver to Buyer Factory)",
-        "mode_of_payment": "Payment method (LC (letter of credit), TT (telegraphic transfer), or Cash)",
-        "packaging_pref": "Packaging preference (Bulk Tanker Truck, PP Bag, Jerry Can, or Drum)",
+        "incoterm": "Delivery terms (1. Ex Factory [ex works or Delivery From Factory] or 2. Deliver to Buyer Factory)",
+        "mode_of_payment": "Payment method (1. LC (Letter of Credit), 2. TT (Telegraphic or Bank Transfer), 3. Cash)",
+        "packaging_pref": "Packaging preference (1. Bulk Tanker (in Truck), 2. PP Bag, 3. Jerry Can, 4. Drum)",
         "delivery_date": f"Delivery date (after {datetime.now().strftime('%Y-%m-%d')}, YYYY-MM-DD format)"
     }
     

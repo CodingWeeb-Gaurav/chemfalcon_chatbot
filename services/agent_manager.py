@@ -19,7 +19,7 @@ FIELD_METADATA = {
         "options": ["KG", "GAL", "LB", "L"],
         "required_for": ["Order", "Sample", "Quote", "ppr"],  # CHANGED HERE
         "agent": 2,
-        "description": "Unit of measurement for the product"
+        "description": "Unit of measurement for the product - select from KG, GAL, LB, or L"
     },
     "quantity": {
         "type": "number", 
@@ -93,6 +93,9 @@ FIELD_METADATA = {
     }
 }
 
+# Allowed units for validation in the 2nd agent
+ALLOWED_UNITS = ["KG", "GAL", "LB", "L"]
+
 # ---------- Helper Functions ---------- #
 
 async def save_to_mongo_stub(session_id: str, message: str, response: str):
@@ -149,31 +152,46 @@ async def save_session(session_id: str, data: Dict[str, Any]):
 
 # ---------- Dynamic Field Management ---------- #
 
+# In agent_manager.py - replace the expand_session_for_request function
+
 def expand_session_for_request(data: Dict[str, Any]):
     """
     Add new fields dynamically based on request type with validation rules.
+    Uses the same logic as the second agent's get_required_fields function.
     """
-    request_type = data.get("request", "").lower()  # Convert to lowercase for comparison
+    request_type = data.get("request", "").lower()
     
-    # Initialize all fields with empty values and metadata
-    for field_name, field_meta in FIELD_METADATA.items():
-        # Convert required_for values to lowercase for comparison
-        required_for_lower = [req.lower() for req in field_meta["required_for"]]
+    # Use the same field requirements as the second agent
+    field_requirements = {
+        "order":  ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],
+        "sample": ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],
+        "quote":  ["unit", "quantity", "price_per_unit", "expected_price", "phone", "incoterm", "mode_of_payment", "packaging_pref", "delivery_date"],  
+        "ppr":    ["unit", "quantity", "price_per_unit", "expected_price", "delivery_date"]  # PPR has different requirements
+    }
+    
+    # Get the required fields for this request type
+    required_fields = field_requirements.get(request_type, ["unit", "quantity", "price_per_unit", "expected_price"])
+    
+    # Initialize only the required fields
+    for field_name in required_fields:
+        if field_name not in data["product_details"]:
+            data["product_details"][field_name] = ""
         
-        if request_type in required_for_lower:
-            if field_name not in data["product_details"]:
-                data["product_details"][field_name] = ""
-            
-            # Store validation info with the field
-            if "validation_info" not in data["product_details"]:
-                data["product_details"]["validation_info"] = {}
-            data["product_details"]["validation_info"][field_name] = {
-                "type": field_meta["type"],
-                "options": field_meta.get("options", []),
-                "validation": field_meta.get("validation", ""),
-                "description": field_meta["description"]
-            }
+        # Store validation info with the field
+        if "validation_info" not in data["product_details"]:
+            data["product_details"]["validation_info"] = {}
+        
+        # Get field metadata
+        field_meta = FIELD_METADATA.get(field_name, {})
+        data["product_details"]["validation_info"][field_name] = {
+            "type": field_meta.get("type", "text"),
+            "options": field_meta.get("options", []),
+            "validation": field_meta.get("validation", ""),
+            "description": field_meta.get("description", field_name),
+            "required": True
+        }
     
+
     return data
 
 def expand_session_for_address_purpose(data: Dict[str, Any]):
@@ -183,6 +201,21 @@ def expand_session_for_address_purpose(data: Dict[str, Any]):
     data["address"] = ""
     data["industry"] = ""
     return data
+
+def validate_unit_field(unit_value: str) -> bool:
+    """
+    Validate that the unit is one of the 4 allowed values.
+    This will be used by the 2nd agent when saving user input.
+    """
+    if not unit_value:
+        return False
+    return unit_value.upper() in ALLOWED_UNITS
+
+def get_allowed_units() -> list:
+    """
+    Return the list of allowed units for the 2nd agent to use.
+    """
+    return ALLOWED_UNITS.copy()
 
 # ---------- Agent Manager Core ---------- #
 

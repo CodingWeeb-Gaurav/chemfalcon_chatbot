@@ -5,6 +5,7 @@
 run locally
 
 multilingual:
+pyenv local 3.11.8
 uvicorn main:app --host 0.0.0.0 --port 8082 --reload   
 
 ssh -o StrictHostKeyChecking=no -R falcon-chatbot:80:localhost:8000 serveo.net
