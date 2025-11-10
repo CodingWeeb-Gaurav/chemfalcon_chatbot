@@ -19,28 +19,6 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-async def get_final_confirmation_text(session_data: dict, session_updates: dict) -> str:
-    """Generate final confirmation text"""
-    # Apply updates temporarily for confirmation
-    temp_session = session_data.copy()
-    for key, value in session_updates.items():
-        temp_session[key] = value
-    
-    confirmation = show_final_confirmation(temp_session, True)
-    
-    if confirmation["status"] == "ready":
-        summary = confirmation["order_summary"]
-        text = "**Please Confirm Your Request**\n\n"
-        text += f"**Product:** {summary['product']['name']}\n"
-        text += f"**Industry:** {summary['industry_use']}\n"
-        text += f"**Address:** {summary['delivery']['address']}\n"
-        text += f"**Quantity:** {summary['quantity_details']['quantity']} {summary['quantity_details']['unit']}\n"
-        text += f"**Total Price:** {summary['quantity_details']['total_price']}\n\n"
-        text += "Please type 'confirm' to place the order or 'change industry'/'change address' to make changes."
-        return text
-    else:
-        return "Please review your order details and confirm if everything is correct."
-
 async def fetch_and_cache_data(session_data: dict):
     """Fetch addresses and industries and cache them in session data"""
     print("🔄 Fetching and caching addresses and industries...")
@@ -49,23 +27,23 @@ async def fetch_and_cache_data(session_data: dict):
     addresses_result = await fetch_user_addresses(session_data)
     if addresses_result.get("status") == "success":
         session_data["_cached_addresses"] = addresses_result["addresses"]
-        print(f" Cached {len(addresses_result['addresses'])} REAL addresses")
+        print(f"✅ Cached {len(addresses_result['addresses'])} REAL addresses")
         for addr in addresses_result["addresses"]:
             print(f"   - {addr.get('addressLine', 'Unknown')}")
     else:
         session_data["_cached_addresses"] = []
-        print(f"Failed to fetch addresses: {addresses_result.get('error', 'Unknown error')}")
+        print(f"❌ Failed to fetch addresses: {addresses_result.get('error', 'Unknown error')}")
     
     # Fetch industries (no auth needed)
     industries_result = await fetch_industries()
     if industries_result.get("status") == "success":
         session_data["_cached_industries"] = industries_result["industries"]
-        print(f"Cached {len(industries_result['industries'])} REAL industries")
+        print(f"✅ Cached {len(industries_result['industries'])} REAL industries")
         for industry in industries_result["industries"]:
             print(f"   - {industry.get('name_en', 'Unknown')}")
     else:
         session_data["_cached_industries"] = []
-        print(f" Failed to fetch industries: {industries_result.get('error', 'Unknown error')}")
+        print(f"❌ Failed to fetch industries: {industries_result.get('error', 'Unknown error')}")
     
     # Mark as fetched
     session_data["_cached_data_fetched"] = True
@@ -73,7 +51,6 @@ async def fetch_and_cache_data(session_data: dict):
 async def handle_address_purpose(user_input: str, session_data: dict):
     """
     Agent 3: Address and Purpose Handler - Collects delivery address and industry
-    Automatically starts with industries when triggered
     """
     try:
         print(f"🔍 Agent 3 - Starting with session_data keys: {list(session_data.keys())}")
@@ -83,7 +60,7 @@ async def handle_address_purpose(user_input: str, session_data: dict):
             print("🚫 Handover condition - agent 3 idle")
             return "I'll hand you over to the next specialist.", session_data
         
-        # 🔥 NEW: Fetch addresses and industries on first entry to Agent 3
+        # Fetch addresses and industries on first entry to Agent 3
         if not session_data.get("_cached_data_fetched"):
             print("🚀 First time in Agent 3 - Fetching addresses and industries...")
             await fetch_and_cache_data(session_data)
@@ -92,7 +69,7 @@ async def handle_address_purpose(user_input: str, session_data: dict):
         cached_industries = session_data.get("_cached_industries", [])
         cached_addresses = session_data.get("_cached_addresses", [])
         
-        # 🔧 FIX: If no data available, show error immediately
+        # If no data available, show error immediately
         if not cached_industries and not cached_addresses:
             error_msg = "I apologize, but I'm unable to fetch the required data (industries and addresses) at the moment. Please try again later or contact support."
             session_data.setdefault("history", []).append({
@@ -100,14 +77,6 @@ async def handle_address_purpose(user_input: str, session_data: dict):
                 "agent": error_msg
             })
             return error_msg, session_data
-        
-        # 🔥 NEW: Auto-trigger industries display on first interaction
-        is_first_interaction = len(session_data.get("history", [])) == 0
-        if is_first_interaction and cached_industries:
-            print("🎯 Auto-triggering industries display on first interaction")
-            # Add a system message to trigger industries display
-            auto_trigger_msg = "SYSTEM: Auto-display industries as this is the first interaction in Agent 3. Show ONLY REAL industries from API immediately and ask user to select one."
-            user_input = f"{auto_trigger_msg}\n\nUser: {user_input}"
         
         # Process with AI using tool calling
         ai_response = await process_address_purpose(user_input, session_data)
@@ -121,7 +90,7 @@ async def handle_address_purpose(user_input: str, session_data: dict):
         
         # Add to history
         session_data.setdefault("history", []).append({
-            "user": user_input.replace(auto_trigger_msg + "\n\n", "") if 'auto_trigger_msg' in locals() else user_input,
+            "user": user_input,
             "agent": ai_response["response"]
         })
         
@@ -151,53 +120,22 @@ async def process_address_purpose(user_input: str, session_data: dict):
     
     # Add conversation history
     history = session_data.get("history", [])
-    for entry in history[-18:]:
+    for entry in history[-6:]:  # Keep only recent history
         messages.append({"role": "user", "content": entry["user"]})
         messages.append({"role": "assistant", "content": entry["agent"]})
     
-    # Check if user is selecting address by number
-    user_input_clean = user_input.strip()
-    cached_addresses = session_data.get("_cached_addresses", [])
-    
-    # 🔥 FIX: If user input is just a number and we're expecting address selection
-    if (user_input_clean.isdigit() and 
-        session_data.get("industry_id") and 
-        not session_data.get("address") and
-        cached_addresses):
-        
-        address_number = int(user_input_clean)
-        if 1 <= address_number <= len(cached_addresses):
-            print(f"🎯 User selected address by number: {address_number}")
-            # Auto-select the address without showing list again
-            selected_address = cached_addresses[address_number - 1]
-            session_updates = {"address": selected_address}
-            
-            # Add to history
-            session_data.setdefault("history", []).append({
-                "user": user_input,
-                "agent": f"Address selected: {selected_address.get('addressLine', 'Unknown')}"
-            })
-            
-            # Show final confirmation
-            final_response = f" Address selected: {selected_address.get('addressLine', 'Unknown')}\n\n"
-            final_response += await get_final_confirmation_text(session_data, session_updates)
-            
-            return {
-                "response": final_response,
-                "session_updates": session_updates
-            }
-    
     # Check if we need to auto-show data (first interaction or user asking for data)
     cached_industries = session_data.get("_cached_industries", [])
+    cached_addresses = session_data.get("_cached_addresses", [])
     
     should_auto_show = (
         len(history) == 0 or  # First interaction
-        "SYSTEM: Auto-display industries" in user_input or
         "industr" in user_input.lower() or
         "address" in user_input.lower() or
         "show" in user_input.lower() or
         "list" in user_input.lower() or
-        "give me" in user_input.lower()
+        "give me" in user_input.lower() or
+        "select" in user_input.lower()
     )
     
     if should_auto_show:
@@ -306,7 +244,7 @@ async def process_address_purpose(user_input: str, session_data: dict):
             {
                 "type": "function",
                 "function": {
-                    "name": "place_order_final",
+                    "name": "place_order_request",
                     "description": "Place the final order after user confirms everything. Only call when user explicitly confirms.",
                     "parameters": {
                         "type": "object",
@@ -372,23 +310,37 @@ async def process_address_purpose(user_input: str, session_data: dict):
                 })
                 
             elif function_name == "select_industry":
-                session_updates["industry_id"] = function_args.get("industry_id")
-                session_updates["industry_name"] = function_args.get("industry_name")
+                industry_id = function_args.get("industry_id")
+                industry_name = function_args.get("industry_name")
+                
+                # Validate that the industry exists in cached data
+                cached_industries = session_data.get("_cached_industries", [])
+                industry_exists = any(ind.get("_id") == industry_id for ind in cached_industries)
+                
+                if industry_exists:
+                    session_updates["industry_id"] = industry_id
+                    session_updates["industry_name"] = industry_name
+                    result = {"status": "success", "message": f"Industry '{industry_name}' selected"}
+                    print(f"✅ User selected industry: {industry_name} (ID: {industry_id})")
+                    
+                    # Auto-trigger address selection after industry is selected
+                    cached_addresses = session_data.get("_cached_addresses", [])
+                    if cached_addresses and not session_data.get("address"):
+                        print("🎯 Industry selected - auto-triggering address display")
+                        follow_up_messages.append({
+                            "role": "system",
+                            "content": "AUTO-SHOW ADDRESSES: Industry selected. Now display ONLY REAL addresses from API as numbered list immediately and ask user to select one."
+                        })
+                else:
+                    result = {"status": "error", "message": "Invalid industry ID provided"}
+                    print(f"❌ Invalid industry ID: {industry_id}")
+                
                 follow_up_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": json.dumps({"status": "success"})
+                    "content": json.dumps(result)
                 })
                 
-                # 🔥 NEW: Auto-trigger address selection after industry is selected
-                cached_addresses = session_data.get("_cached_addresses", [])
-                if cached_addresses and not session_data.get("address"):
-                    print("🎯 Industry selected - auto-triggering address display")
-                    follow_up_messages.append({
-                        "role": "system",
-                        "content": "AUTO-SHOW ADDRESSES: Industry selected. Now display ONLY REAL addresses from API as numbered list immediately and ask user to select one."
-                    })
-            
             elif function_name == "select_address":
                 address_object = function_args.get("address_object")
                 cached_addresses = session_data.get("_cached_addresses", [])
@@ -396,7 +348,7 @@ async def process_address_purpose(user_input: str, session_data: dict):
                 print(f"🔍 Raw address_object received: {address_object}")
                 print(f"🔍 Cached addresses available: {len(cached_addresses)}")
                 
-                # 🔥 FIX: Handle different types of address selection
+                # Handle different types of address selection
                 selected_address = None
                 
                 if isinstance(address_object, dict) and address_object.get("_id"):
@@ -419,7 +371,7 @@ async def process_address_purpose(user_input: str, session_data: dict):
                             print(f"🔄 Matched address text to: {addr.get('_id')}")
                             break
                 
-                # 🔥 FIX: If still no address found, try to extract from user input
+                # If still no address found, try to extract from user input
                 if not selected_address and cached_addresses:
                     user_input_lower = user_input.lower()
                     # Look for numbers in user input
@@ -436,29 +388,27 @@ async def process_address_purpose(user_input: str, session_data: dict):
                     session_updates["address"] = selected_address
                     print(f"✅ Stored REAL address: {selected_address.get('_id')} - {selected_address.get('addressLine', '')}")
                     
-                    # 🔥 NEW: Auto-trigger final confirmation after address is selected
+                    # Auto-trigger final confirmation after address is selected
                     if session_data.get("industry_id") or session_updates.get("industry_id"):
                         print("🎯 Address selected - auto-triggering final confirmation")
                         follow_up_messages.append({
                             "role": "system", 
                             "content": "AUTO-SHOW FINAL CONFIRMATION: Both industry and address collected. Show final confirmation with all order details immediately."
                         })
+                    
+                    result = {"status": "success", "address_id": selected_address.get("_id")}
                 else:
                     # Don't create dummy addresses - fail gracefully
                     error_msg = "No valid address selected. Please choose from the available addresses."
-                    follow_up_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps({"status": "error", "message": error_msg})
-                    })
-                    # Don't update session with invalid address
-                    continue
+                    result = {"status": "error", "message": error_msg}
+                    print(f"❌ {error_msg}")
                 
                 follow_up_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": json.dumps({"status": "success", "address_id": selected_address.get("_id")})
-                })              
+                    "content": json.dumps(result)
+                })
+                
             elif function_name == "show_final_confirmation":
                 # Check if we have both industry and address
                 has_industry = session_data.get("industry_id") or session_updates.get("industry_id")
@@ -472,41 +422,39 @@ async def process_address_purpose(user_input: str, session_data: dict):
                     "content": json.dumps(result, default=str)
                 })
                 
-            elif function_name == "place_order_final":
+            elif function_name == "place_order_request":
                 if function_args.get("user_confirmed"):
                     print("🎯 User confirmed - placing order...")
                     order_result = await place_order_request(session_data)
                     
                     if order_result["status"] == "success":
-                        follow_up_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": json.dumps({
-                                "status": "success",
-                                "message": order_result["message"],
-                                "order_placed": True
-                            })
-                        })
+                        result = {
+                            "status": "success",
+                            "message": order_result["message"],
+                            "order_placed": True
+                        }
                     else:
-                        error_message = f"Order failed: {order_result['message']} (Error: {order_result.get('error_type', 'Unknown')})"
-                        follow_up_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": json.dumps({
-                                "status": "error",
-                                "message": error_message,
-                                "error_type": order_result.get("error_type"),
-                                "order_placed": False
-                            })
-                        })
-                else:
+                        error_message = f"Order failed: {order_result['message']}"
+                        result = {
+                            "status": "error",
+                            "message": error_message,
+                            "order_placed": False
+                        }
+                    
                     follow_up_messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": json.dumps({
-                            "status": "error", 
-                            "message": "User confirmation required to place order"
-                        })
+                        "content": json.dumps(result)
+                    })
+                else:
+                    result = {
+                        "status": "error", 
+                        "message": "User confirmation required to place order"
+                    }
+                    follow_up_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result)
                     })
         
         # Get final response with GPT-4.1
@@ -526,7 +474,7 @@ async def process_address_purpose(user_input: str, session_data: dict):
 
 # Cached Data Functions
 def get_cached_industries(session_data: dict):
-    """Get cached industries from session data - ONLY REAL DATA"""
+    """Get cached industries from session data - ONLY _id and name_en for active industries"""
     industries = session_data.get("_cached_industries", [])
     if not industries:
         return {
@@ -536,21 +484,23 @@ def get_cached_industries(session_data: dict):
             "message": "No industries available from API"
         }
     
-    # Format industries for display - ONLY REAL DATA
+    # Format industries for display - ONLY _id and name_en
     formatted_industries = []
     for i, industry in enumerate(industries, 1):
         formatted_industries.append({
             "number": i,
-            "id": industry.get("_id"),
+            "id": industry.get("_id"),  # This is the _id to save
             "name": industry.get("name_en", "Unknown Industry")
         })
     
-    print(f"📊 Returning {len(formatted_industries)} REAL industries from API")
+    print(f"📊 Returning {len(formatted_industries)} ACTIVE industries (status:true, isDeleted:false)")
+    print(f"📊 First industry: {formatted_industries[0]['name']} (ID: {formatted_industries[0]['id']})" if formatted_industries else "No industries")
+    
     return {
         "industries": formatted_industries,
         "count": len(industries),
         "status": "success",
-        "message": f"Found {len(industries)} REAL industries from API"
+        "message": f"Found {len(industries)} ACTIVE industries (status:true, isDeleted:false) - Display ALL {len(industries)} items"
     }
 
 def get_cached_addresses(session_data: dict):
@@ -590,204 +540,6 @@ def get_cached_addresses(session_data: dict):
         "message": f"Found {len(addresses)} REAL addresses from API"
     }
 
-# API Integration Functions (NO FALLBACKS - ONLY REAL DATA)
-async def fetch_industries():
-    """Fetch available industries from API - NO FALLBACKS"""
-    print("🔍 Fetching industries from API...")
-    url = "https://chemfalcon.com:2053/category/getAllIndustries"
-    headers = {
-        "Content-Type": "application/json",
-        "x-user-type": "Buyer",
-        "x-auth-language": "English"
-    }
-    data = {}
-    
-    try:
-        # Create SSL context
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        
-        async with aiohttp.ClientSession(connector=connector) as session:
-            print(f"🔍 Making PATCH request to: {url}")
-            async with session.patch(url, headers=headers, json=data, ssl=False) as response:
-                print(f"🔍 Industries API response status: {response.status}")
-                
-                response_text = await response.text()
-                print(f"🔍 Raw industries response: {response_text}")
-                
-                if response.status in [200, 201]:
-                    result = json.loads(response_text)
-                    print(f"✅ Industries API Response: {result.get('message', 'Unknown')}")
-                    
-                    industries_data = []
-                    if (result.get("error") == False and 
-                        result.get("results", {}).get("inventories")):
-                        
-                        raw_industries = result["results"]["inventories"]
-                        print(f"🔍 Found {len(raw_industries)} raw industries")
-                        
-                        # Filter: only active and not deleted industries
-                        for industry in raw_industries:
-                            if (industry.get("status") == True and 
-                                industry.get("isDeleted") == False):
-                                industries_data.append({
-                                    "_id": industry.get("_id"),
-                                    "name_en": industry.get("name_en")
-                                })
-                    
-                    print(f"✅ Filtered {len(industries_data)} active REAL industries")
-                    return {
-                        "industries": industries_data,
-                        "count": len(industries_data),
-                        "status": "success"
-                    }
-                else:
-                    print(f"❌ Industries API returned status {response.status}")
-                    return {
-                        "industries": [],
-                        "count": 0,
-                        "status": "error",
-                        "error": f"API returned status {response.status}"
-                    }
-                    
-    except Exception as e:
-        print(f"❌ Error fetching industries: {e}")
-        return {
-            "industries": [],
-            "count": 0,
-            "status": "error",
-            "error": str(e)
-        }
-
-async def fetch_user_addresses(session_data: dict):
-    """Fetch user addresses using the ACTUAL user token from session - NO FALLBACKS"""
-    print("🔍 Fetching user addresses from API...")
-    
-    # Get the actual user token from session data
-    user_auth_token = session_data.get("userAuth")
-    if not user_auth_token:
-        print("❌ No userAuth token found in session data")
-        return {
-            "addresses": [],
-            "count": 0,
-            "status": "error", 
-            "error": "No authentication token available"
-        }
-    
-    print(f"🔍 Using userAuth token from session: {user_auth_token[:20]}...")
-    
-    url = "https://chemfalcon.com:2053/user/getAddresses"
-    headers = {
-        "x-auth-token-user": user_auth_token,  # Use the actual user token
-        "Content-Type": "application/json",
-        "x-auth-language": "English",
-        "x-user-type": "Buyer"
-    }
-    data = {}
-    
-    try:
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        
-        async with aiohttp.ClientSession(connector=connector) as session:
-            print(f"🔍 Making PATCH request to: {url}")
-            async with session.patch(url, headers=headers, json=data, ssl=False) as response:
-                print(f"🔍 Address API response status: {response.status}")
-                
-                response_text = await response.text()
-                print(f"🔍 Raw addresses response: {response_text}")
-                
-                if response.status in [200, 201]:
-                    result = json.loads(response_text)
-                    print(f"📡 Addresses API Response: {result.get('message', 'Unknown')}")
-                    
-                    addresses = []
-                    if result.get("error") == False and result.get("results", {}).get("address"):
-                        addresses = result["results"]["address"]
-                    
-                    print(f"📡 Found {len(addresses)} REAL addresses")
-                    for addr in addresses:
-                        print(f"   - {addr.get('addressLine', 'Unknown')}")
-                    return {
-                        "addresses": addresses,
-                        "count": len(addresses),
-                        "status": "success"
-                    }
-                else:
-                    print(f"❌ Address API returned status {response.status}")
-                    return {
-                        "addresses": [],
-                        "count": 0,
-                        "status": "error", 
-                        "error": f"API returned status {response.status}"
-                    }
-                
-    except Exception as e:
-        print(f"❌ Failed to fetch addresses: {e}")
-        return {
-            "addresses": [],
-            "count": 0,
-            "status": "error", 
-            "error": str(e)
-        }
-
-def build_system_prompt(session_data: dict) -> str:
-    """Build system prompt for address and purpose collection"""
-    request_type = session_data.get("request", "").upper()
-    product_name = session_data.get("product_name", "the product")
-    
-    cached_industries = session_data.get("_cached_industries", [])
-    cached_addresses = session_data.get("_cached_addresses", [])
-    
-    # Show actual available data in prompt
-    actual_industries = "\n".join([f"- {ind.get('name_en', 'Unknown')}" for i, ind in enumerate(cached_industries, start=1)])
-    actual_addresses = "\n".join([f"- {addr.get('addressLine', 'Unknown')}" for i, addr in enumerate(cached_addresses, start=1)])
-    
-    prompt = f"""You are the **Finalization Agent** for chemical product orders.
-
-🚨 **CRITICAL RULES - NO REPETITION:**
-1. **SHOW LISTS ONLY ONCE**: Never show the same list multiple times
-2. **IMMEDIATE SELECTION**: When user provides a number, immediately accept it as selection
-3. **NO LIST REFRESHING**: Don't re-show lists after valid selection
-
-WORKFLOW:
-1. Show industries list ONCE → wait for number selection
-2. Show addresses list ONCE → wait for number selection  
-3. Show final confirmation → wait for confirmation
-4. Place order when confirmed
-
-ADDRESS SELECTION FIX:
-- When user responds with just a number like "2", IMMEDIATELY accept it as address selection
-- DON'T show the address list again after valid number selection
-- Move directly to final confirmation after address selection
-- Only show lists when they haven't been shown yet or selection is invalid
-
-CURRENT STATUS:
-- Industry selected: {'Yes' if session_data.get('industry_id') else 'No'}
-- Address selected: {'Yes' if session_data.get('address') else 'No'}
-
-ACTUAL AVAILABLE DATA FROM API:
-- Industries ({len(cached_industries)}): 
-{actual_industries}
-
-- Addresses ({len(cached_addresses)}):
-{actual_addresses}
-
-PROHIBITED:
-- ❌ Never show lists multiple times
-- ❌ Never ask for selection after valid number provided
-- ❌ Never invent data
-
-Follow the workflow exactly and accept number selections immediately."""
-
-    return prompt
-
 def show_final_confirmation(session_data: dict, confirmation_ready: bool):
     """Generate final confirmation summary with all collected data"""
     if not confirmation_ready:
@@ -824,7 +576,7 @@ def show_final_confirmation(session_data: dict, confirmation_ready: bool):
             "request_type": session_data.get("request", "N/A"),
             "quantity_details": {
                 "quantity": product_details.get("quantity", "N/A"),
-                "unit": product_details.get("unit", "N/A"),  # ✅ Unit field from user selection
+                "unit": product_details.get("unit", "N/A"),
                 "price_per_unit": product_details.get("price_per_unit", "N/A"),
                 "total_price": product_details.get("expected_price", "N/A")
             },
@@ -845,3 +597,197 @@ def show_final_confirmation(session_data: dict, confirmation_ready: bool):
     }
     
     return confirmation
+
+def build_system_prompt(session_data: dict) -> str:
+    """Build system prompt for address and purpose collection"""
+    cached_industries = session_data.get("_cached_industries", [])
+    cached_addresses = session_data.get("_cached_addresses", [])
+    
+    # Show actual available data in prompt with proper indexing
+    actual_industries = "\n".join([f"{i}. {ind.get('name_en', 'Unknown')} (ID: {ind.get('_id')})" for i, ind in enumerate(cached_industries, start=1)])
+    actual_addresses = "\n".join([f"{i}. {addr.get('addressLine', 'Unknown')}" for i, addr in enumerate(cached_addresses, start=1)])
+
+    prompt = f"""You are the **Finalization Agent** for chemical product orders.
+
+🚨 **CRITICAL RULES - STRICTLY ENFORCED:**
+1. **DISPLAY ENTIRE INDUSTRY LIST**: You MUST show ALL {len(cached_industries)} industries from the API, no matter how long the list is
+2. **USE ACTUAL INDEX NUMBERS**: Display industries with numbers 1 through {len(cached_industries)} exactly as they appear in cached data
+3. **SAVE ONLY _id**: When user confirms an index, save ONLY the _id field to session memory
+4. **NO DATA MODIFICATION**: Never modify, filter, or shorten the industry list - show it completely
+5. **REAL DATA ONLY**: Only use industries/addresses from API cache
+
+ACTUAL AVAILABLE DATA FROM API:
+- Industries ({len(cached_industries)} available, status:true, isDeleted:false): 
+{actual_industries}
+
+- Addresses ({len(cached_addresses)} available):
+{actual_addresses}
+
+WORKFLOW - FOLLOW EXACTLY:
+1. **ALWAYS start by calling get_cached_industries** to display ALL industries
+2. User selects industry by number (1-{len(cached_industries)}) → call select_industry with the EXACT _id and name_en from that index
+3. Auto-show addresses → call get_cached_addresses to display ALL addresses  
+4. User selects address by number → call select_address with COMPLETE address object
+5. Show final confirmation → call show_final_confirmation
+6. Place order when user explicitly confirms → call place_order_request
+
+INDUSTRY SELECTION RULES:
+- When user says a number (e.g., "1", "2"), map it to the corresponding industry in the cached list
+- Use EXACT _id from the industry at that position (industry at index 0 has _id: {cached_industries[0].get('_id') if cached_industries else 'N/A'})
+- Save ONLY: industry_id (the _id) and industry_name (the name_en)
+- Never save any other industry fields
+
+ADDRESS SELECTION RULES:
+- When user selects address by number, use the COMPLETE address object from cached data
+- Never invent or modify address details
+
+PROHIBITED - STRICTLY FORBIDDEN:
+- ❌ Never show partial or shortened industry lists
+- ❌ Never invent industries or addresses
+- ❌ Never modify the numbering or order of industries
+- ❌ Never save anything except _id for industries
+- ❌ After order placement, instruct user to refresh page for new session
+
+START IMMEDIATELY by displaying the COMPLETE industry list with all {len(cached_industries)} items."""
+
+    return prompt
+
+# API Integration Functions (keep the same as before)
+async def fetch_industries():
+    """Fetch available industries from API - Filter only status:true and isDeleted:false"""
+    print("🔍 Fetching industries from API...")
+    url = "https://chemfalcon.com:2053/category/getAllIndustries"
+    headers = {
+        "Content-Type": "application/json",
+        "x-user-type": "Buyer",
+        "x-auth-language": "English"
+    }
+    data = {}
+    
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
+            print(f"🔍 Making PATCH request to: {url}")
+            async with session.patch(url, headers=headers, json=data, ssl=False) as response:
+                print(f"🔍 Industries API response status: {response.status}")
+                
+                response_text = await response.text()
+                print(f"🔍 Raw industries response: {response_text}")
+                
+                if response.status in [200, 201]:
+                    result = json.loads(response_text)
+                    print(f"✅ Industries API Response: {result.get('message', 'Unknown')}")
+                    
+                    industries_data = []
+                    if (result.get("error") == False and 
+                        result.get("results", {}).get("inventories")):
+                        
+                        raw_industries = result["results"]["inventories"]
+                        print(f"🔍 Found {len(raw_industries)} raw industries")
+                        
+                        # STRICT FILTERING: Only include industries with status:true and isDeleted:false
+                        for industry in raw_industries:
+                            if (industry.get("status") == True and 
+                                industry.get("isDeleted") == False):
+                                # SAVE ONLY _id and name_en - remove all other fields
+                                industries_data.append({
+                                    "_id": industry.get("_id"),
+                                    "name_en": industry.get("name_en")
+                                })
+                                print(f"✅ Included industry: {industry.get('name_en')} (ID: {industry.get('_id')})")
+                            else:
+                                print(f"❌ Excluded industry - status:{industry.get('status')}, isDeleted:{industry.get('isDeleted')}")
+                    
+                    print(f"✅ Filtered {len(industries_data)} active REAL industries (status:true, isDeleted:false)")
+                    return {
+                        "industries": industries_data,
+                        "count": len(industries_data),
+                        "status": "success"
+                    }
+                else:
+                    print(f"❌ Industries API returned status {response.status}")
+                    return {
+                        "industries": [],
+                        "count": 0,
+                        "status": "error",
+                        "error": f"API returned status {response.status}"
+                    }
+                    
+    except Exception as e:
+        print(f"❌ Error fetching industries: {e}")
+        return {
+            "industries": [],
+            "count": 0,
+            "status": "error",
+            "error": str(e)
+        }
+
+async def fetch_user_addresses(session_data: dict):
+    """Fetch user addresses using the ACTUAL user token from session"""
+    print("🔍 Fetching user addresses from API...")
+    
+    user_auth_token = session_data.get("userAuth")
+    if not user_auth_token:
+        return {
+            "addresses": [],
+            "count": 0,
+            "status": "error", 
+            "error": "No authentication token available"
+        }
+    
+    url = "https://chemfalcon.com:2053/user/getAddresses"
+    headers = {
+        "x-auth-token-user": user_auth_token,
+        "Content-Type": "application/json",
+        "x-auth-language": "English",
+        "x-user-type": "Buyer"
+    }
+    data = {}
+    
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
+            print(f"🔍 Making PATCH request to: {url}")
+            async with session.patch(url, headers=headers, json=data, ssl=False) as response:
+                print(f"🔍 Address API response status: {response.status}")
+                
+                response_text = await response.text()
+                
+                if response.status in [200, 201]:
+                    result = json.loads(response_text)
+                    
+                    addresses = []
+                    if result.get("error") == False and result.get("results", {}).get("address"):
+                        addresses = result["results"]["address"]
+                    
+                    return {
+                        "addresses": addresses,
+                        "count": len(addresses),
+                        "status": "success"
+                    }
+                else:
+                    return {
+                        "addresses": [],
+                        "count": 0,
+                        "status": "error", 
+                        "error": f"API returned status {response.status}"
+                    }
+                
+    except Exception as e:
+        print(f"❌ Failed to fetch addresses: {e}")
+        return {
+            "addresses": [],
+            "count": 0,
+            "status": "error", 
+            "error": str(e)
+        }

@@ -40,37 +40,49 @@ async def place_order_request(session_data: dict):
 # ----------------------------------------------------------------------
 async def _process_ppr(session_data: dict, user_auth_token: str):
     """
-    Handles PPR requests EXACTLY like the curl reference:
-    POST /order/createRequirement
-    Content-Type: application/json
-    Body:
-    {
-        "product": "...",
-        "expectedPrice": 0,
-        "address": "address_id",
-        "quantity": 10,
-        "quantityType": "Kg",
-        "endDate": "2025-01-01"
-    }
+    Handles PPR requests EXACTLY like the curl reference
     """
     print("📌 Request type = PPR → Using createRequirement API")
 
     product_details = session_data.get("product_details", {})
     address_data = session_data.get("address", {})
 
-    # ✅ Address MUST be only the ID
-    address_id = address_data.get("_id")
-    if not address_id:
+    # ❌ NO PLACEHOLDER: Strict validation
+    if not isinstance(address_data, dict):
         return {
             "status": "error",
             "error_type": "ADDRESS_ERROR",
-            "message": "Address ID missing for PPR request"
+            "message": "Address data is corrupted. Please restart the order process."
         }
+
+    address_id = address_data.get("_id")
+    if not address_id or address_id == "unknown":
+        return {
+            "status": "error", 
+            "error_type": "ADDRESS_ERROR",
+            "message": "Valid address ID not found. Please select a valid address."
+        }
+
+    # Validate required fields for PPR
+    required_fields = ["product_id", "quantity", "unit", "delivery_date"]
+    for field in required_fields:
+        if field == "product_id" and not session_data.get("product_id"):
+            return {
+                "status": "error",
+                "error_type": "DATA_ERROR", 
+                "message": "Product information missing. Please restart the order process."
+            }
+        elif field in ["quantity", "unit", "delivery_date"] and not product_details.get(field):
+            return {
+                "status": "error",
+                "error_type": "DATA_ERROR",
+                "message": f"Required field '{field}' is missing. Please restart the order process."
+            }
 
     # ✅ JSON payload EXACT as required
     payload = {
         "product": session_data.get("product_id"),
-        "expectedPrice": product_details.get("expected_price"),
+        "expectedPrice": product_details.get("expected_price", 0),
         "address": address_id,
         "quantity": product_details.get("quantity"),
         "quantityType": product_details.get("unit"),

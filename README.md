@@ -56,7 +56,7 @@ restart command:
 sudo nginx -t
 sudo systemctl restart nginx
 
-test- 14 kg at 2433 per kg price, deliver by 2025-12-13 in Jerry can to the buyer factory, paid by LC, phone - 8876798676
+test- 14 kg at 2433 per kg price, deliver by 2025-12-13 in Jerry can to the buyer factory, paid by LC, phone - +918876798676
 **Changes**
 Separate Caching (Done in mongoDB)
 phonenumber verification using python library
