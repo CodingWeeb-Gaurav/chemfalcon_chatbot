@@ -111,7 +111,7 @@ async def process_request_details(user_input: str, session_data: dict):
                                     "properties": {
                                         "unit": {
                                             "type": "string",
-                                            "description": "Extracted unit value (KG, GAL, LB, L)"
+                                            "description": "Extracted unit value (KG, GAL, LB, L), must ask from User"
                                         },
                                         "quantity": {
                                             "type": "number",
@@ -656,7 +656,7 @@ PRODUCT INFORMATION:
 ALL REQUIRED FIELDS for {request_type}:
 {format_fields_info(required_fields, session_data)}
 
-FIELD OPTIONS: 
+FIELD OPTIONS:
 • Unit: KG (kilogram), GAL (gallon), LB (pound), L (liter) (user MUST choose one)
 - Incoterm: 1. Ex Factory (Ex Works or Delivery From Factory) 2. Deliver to Buyer Factory
 - Payment: 1. LC (Letter of Credit), 2. TT (Telegraphic transfer or Bank Transfer), 3. Cash

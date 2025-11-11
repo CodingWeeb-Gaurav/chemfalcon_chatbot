@@ -63,11 +63,12 @@ async def fetch_inventory_query(query: str, session_data: dict):
         ssl_context.verify_mode = ssl.CERT_NONE
         
         connector = aiohttp.TCPConnector(ssl=ssl_context)
-        
+        print(f"📡 Calling Inventory API: {url}")
+        print(f"📥 API Request Body: {json.dumps(data)}")
         async with aiohttp.ClientSession(connector=connector) as session:
             async with session.patch(url, headers=headers, json=data, ssl=False) as response:
                 result = await response.json()
-                print(f"✅ API call successful, found {len(result.get('results', {}).get('products', []))} products")
+                print(f"✅ API inventory call successful, found {len(result.get('results', {}).get('products', []))} products")
                 
                 # Clean up the response - remove rawResult and sellers
                 if "results" in result:
