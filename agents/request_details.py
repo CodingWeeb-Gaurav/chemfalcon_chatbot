@@ -192,7 +192,7 @@ async def process_request_details(user_input: str, session_data: dict):
                                 },
                                 "price_per_unit": {
                                     "type": "number",
-                                    "description": "Price per unit value"
+                                    "description": "Price per unit in Bangladesh Taka (BDT)"
                                 }
                             },
                             "required": ["quantity", "price_per_unit"]
@@ -673,7 +673,7 @@ example:
     "To proceed with your request, please provide the following details:
     - Unit (choose from KG (Kilogram), GAL (Gallon), LB (Pound), L (Liter))
     - Quantity (between <minQuantity (if request != sample)> and <maxQuantity> KG)
-    - Price per unit (from the unit you selected)
+    - Price per unit (for the unit you selected in Bangladesh Taka BDT)
     - Phone number (must be with country code).
     - Incoterm (- Ex Factory [Ex Works or Delivery From Factory] \n - Deliver to Buyer Factory)
     - Mode of payment (- LC (Letter of Credit), \n - TT (Telegraphic Transfer), \n - Cash)
