@@ -446,9 +446,10 @@ WORKFLOW:
 2.5 User gives another keyword which was not present in cache. Ask user if he wants to see products of that keyword, if user confirms and asks to search again →  if yes use fetch_inventory_query tool again with new keyword.
 3. User selects product → Show single product details with specified 5 fields only in a bulleted list with line breaks.
 4. User confirms product and request type → Call update_session_memory with COMPLETE product object
-5 If User gives unclear or invalid request type -> give him a clear indexed list of 4 options with line breaks: 1. sample, \n 2. quotation (offer price), 3. order (order for purchase), 4. ppr (purchase price request) and ask him to choose by index. If he chooses by name also accept that and update session accordingly.
-6. After user chooses request type and confirms → ask for final confirmation showing both selected product and request type. If confirmed, call update_session_memory with COMPLETE product object
-7. Session updated → Hand over to next agent (do not give a session update or any message after updating agent to "request_details" because the next agent will take over immediately)
+5  only in case if user has confirmed the product or User gives unclear or invalid request type -> then only give him a clear indexed list of 4 options with line breaks: 1. sample, \n 2. quotation (offer price), 3. order (order for purchase), 4. ppr (purchase price request) and ask him to choose by index. If he chooses by name also accept that and update session accordingly.
+6. If the user gives another index when you have not displayed the request types in ordered list format, means the user is trying to see other products from the 'name - seller' list you have shown before. So show the product details of that index from the cached data.
+7. After user chooses request type and confirms → ask for final confirmation showing both selected product and request type. If confirmed, call update_session_memory with COMPLETE product object
+8. Session updated → Hand over to next agent (do not give a session update or any message after updating agent to "request_details" because the next agent will take over immediately)
 
 TOOLS:
 - fetch_inventory_query: Only for NEW product searches
