@@ -48,6 +48,23 @@ async def chat_endpoint(chat: ChatMessage):
     user_auth = chat.userAuth
     language_input = chat.language or "English"
     
+    # Check if user is authenticated
+    if not user_auth or user_auth.strip() == "":
+        logger.warning(f"❌ UNAUTHENTICATED ACCESS ATTEMPT - Session: {session_id}")
+        
+        # Normalize language for error message
+        language_code = normalize_language(language_input)
+        
+        # Return appropriate error message based on language
+        if language_code == "ar":
+            error_message = "يرجى تسجيل الدخول أو الاشتراك لتفعيل الدردشة."
+        elif language_code == "bn":
+            error_message = "চ্যাটবট সক্রিয় করতে সাইন ইন বা সাইন আপ করুন।"
+        else:
+            error_message = "Please sign in or sign up to activate the chatbot."
+        
+        return {"reply": error_message, "sessionId": session_id}
+        
     # Normalize language from frontend format to backend format
     language_code = normalize_language(language_input)
     

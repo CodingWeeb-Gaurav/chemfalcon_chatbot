@@ -10,9 +10,14 @@ uvicorn main:app --host 0.0.0.0 --port 8082 --reload
 
 ssh -o StrictHostKeyChecking=no -R falcon-chatbot:80:localhost:8000 serveo.net
 
+# Restart your falcon-chatbot service
 pull changes- (go in project directory main folder)
 git pull origin main
+sudo systemctl daemon-reload
 sudo systemctl restart falcon-chatbot
+
+
+
 
 (venv) ubuntu@ip-172-31-28-160:/var/www/chemfalcon-chatbot$  sudo nano /etc/systemd/system/falcon-chatbot.service
  /etc/systemd/system/falcon-chatbot.service
