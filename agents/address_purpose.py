@@ -593,7 +593,7 @@ def show_final_confirmation(session_data: dict, confirmation_ready: bool):
             "packaging": product_details.get("packaging_pref", "N/A"),
             "industry_use": session_data.get("industry_name", "N/A")
         },
-        "message": "Please review your order details above and confirm if everything is correct."
+        "message": "Please review your request details above and confirm if everything is correct."
     }
     
     return confirmation
@@ -632,10 +632,11 @@ WORKFLOW - FOLLOW EXACTLY:
 6. Place order when user explicitly confirms → call place_order_request
 
 INDUSTRY SELECTION RULES:
+- Always show the COMPLETE industry list with ALL {len(cached_industries)} items no mater how long it is and correctly update the _id based on user selection. Do not put the selected index in session data.
 - When user says a number (e.g., "1", "2"), map it to the corresponding industry in the cached list
 - Use EXACT _id from the industry at that position (industry at index 0 has _id: {cached_industries[0].get('_id') if cached_industries else 'N/A'})
 - Save ONLY: industry_id (the _id) and industry_name (the name_en)
-- Never save any other industry fields
+- Never save any other industry fields which are not in the cached data.
 
 ADDRESS SELECTION RULES:
 - When user selects address by number, use the COMPLETE address object from cached data
@@ -647,7 +648,7 @@ PROHIBITED - STRICTLY FORBIDDEN:
 - ❌ Never modify the numbering or order of industries
 - ❌ Never save anything except _id for industries
 - ❌ After order placement, instruct user to refresh page for new session
-
+- ❌ All the prices are in Bangladeshi Taka (BDT). Not in USD or any other currency.
 START IMMEDIATELY by displaying the COMPLETE industry list with all {len(cached_industries)} items."""
 
     return prompt
