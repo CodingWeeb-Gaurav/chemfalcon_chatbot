@@ -697,7 +697,7 @@ example:
 - When all fields complete, ask for check completion_status and hand over
 - You are unable to update any details except the required fields, if user asks to change other details (selected product or request(sample,order, quote)), politely refuse and tell them to refresh the session to start a new order.
 - After changing the session's agent to "address_purpose", you cannot make any more changes or place new orders. Because the third agent has taken over the chat. If the user still asks then tell them to refresh the session to start a new order.
-
+- All prices will be in Bangladesh Taka (BDT) only, If user says another currency, ask them to provide price converted in BDT only. If there is no currency mentioned, assume BDT.
 **TOOLS AVAILABLE:**
 - extract_and_validate_all_fields: Extract and validate ALL fields from user message (PREFERRED)
 - validate_individual_field: Validate single field
@@ -716,7 +716,7 @@ def format_fields_info(required_fields: list, session_data: dict) -> str:
     
     field_descriptions = {
         "unit": "Unit of measurement • KG • GAL • LB • L (choose one)",
-        "price_per_unit": "Your offered price per unit",
+        "price_per_unit": "Your offered price per unit in Bangladeshi Taka (BDT)",
         "expected_price": "Total expected price (auto-calculated)",
         "phone": "Contact phone number (international format: +(country code)(phone number))",
         "incoterm": "Delivery terms (1. Ex Factory [ex works or Delivery From Factory] or 2. Deliver to Buyer Factory)",
