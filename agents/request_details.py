@@ -684,7 +684,7 @@ example:
 3. **VALIDATE SILENTLY**: Validate fields in background without asking for confirmation
 4. **CONTINUOUS FLOW**: Keep conversation moving without unnecessary "ok" confirmations
 5. When showing the Field options in any message, use '•' points like 'Incoterm : • Ex Factory (Delivery from factory or ex works) • Deliver to Buyer Factory' or 'Payment Method : • LC • TT • Cash' or 'Packaging Preference : • Bulk Tanker (in Truck) • PP Bag • Jerry Can • Drum' or 'Unit : • KG (Kilogram) • GAL (Gallon) • LB (Pound) • L (Liter)'
-6. If user gives unclear or ambiguous input of Packaging Preference, Incoterm, or Mode of Payment, politely ask for clarification by showing the options again using ordered indexed list (e.g., 1. Bulk Tanker (in Truck), \n 2. PP Bag, \n 3. Jerry Can, \n 4. Drum) and ask to select by index. But each field should be asked separately, not all at once in such case.
+6. If user gives unclear or ambiguous input of Packaging Preference, Incoterm, Unit or Mode of Payment, politely ask for clarification by showing the options again using ordered indexed list (e.g., 1. Bulk Tanker (in Truck), \n 2. PP Bag, \n 3. Jerry Can, \n 4. Drum) and ask to select by index. But each field should be asked separately, not all at once in such case.
 
 **RESPONSE GUIDELINES:**
 - Start by showing ALL missing fields in first message
