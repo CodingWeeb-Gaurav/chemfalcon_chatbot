@@ -33,3 +33,5 @@ Limitations,
 4. After final confirmation, AI agent switches the route of message, so when next agent takes over, the request and product cannot be changed, refresh to start a new session
 5. No agent can change anything in user profile, because they do not have the API for that. In case if we add that API and purpose, the Agent will hallucinate and mix the data.
 6. Agent has no other data or purpose other than taking the product and request.
+7. Agent has to know that wheter the user want to search keywords in existing cache or do a new Request.
+8. I have to limit the number of produts received By the h

@@ -121,21 +121,16 @@ def get_current_cached_data_for_prompt(session_data: dict, language: str = 'en')
     # Prepare clean product data for the prompt from session cache
     products_data = []
     for i, product in enumerate(current_list):
-        # Use language-specific fields when available, fallback to English
-        name_field = f"name_{language}" if f"name_{language}" in product else "name_en"
-        description_field = f"description_{language}" if f"description_{language}" in product else "description_en"
-        specification_field = f"specification_{language}" if f"specification_{language}" in product else "specification_en"
-        brand_field = f"brand_{language}" if f"brand_{language}" in product else "brand_en"
-        
         product_info = {
             "list_number": i + 1,
-            "name": product.get(name_field, product.get("name_en", "N/A")),
-            "brand": product.get(brand_field, product.get("brand_en", "N/A")),
+            "name": product.get("name_en", "N/A"),
+            "brand": product.get("brand_en", "N/A"),
+            "seller_name": product.get("seller", "N/A"),
             "unit": product.get("unit", "N/A"),  # Unit may not be present or may be different
             "minQuantity": product.get("minQuantity", "N/A"),
             "maxQuantity": product.get("maxQuantity", product.get("quantity", "N/A")),
-            "specification": product.get(specification_field, product.get("specification_en", "N/A")),
-            "description": product.get(description_field, product.get("description_en", "N/A")),
+            "specification": product.get("specification_en", "N/A"),
+            "description": product.get("description_en", "N/A"),
             "modal": product.get("modal", "N/A"),
             "_id": product.get("_id", "N/A")
         }
@@ -222,7 +217,7 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
     response = await client.chat.completions.create(
         model="openai/gpt-4o",
         messages=messages,
-        max_tokens=1000,
+        max_tokens=3000,
         tools=[
             {
                 "type": "function",
@@ -374,7 +369,7 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
         final_response_obj = await client.chat.completions.create(
             model="openai/gpt-4o",
             messages=follow_up_messages,
-            max_tokens=800
+            max_tokens=2000
         )
         final_response = final_response_obj.choices[0].message.content or ""
     else:
@@ -419,6 +414,7 @@ EXAMPLE OF CORRECT update_session_memory CALL:
     "_id": "68f9da20c7fe40d80722c436",
     "name_en": "sulphuric",
     "brand_en": "Deco",
+    "seller": "ChemFalcon",
     "unit": "KG",
     "minQuantity": 12,
     "maxQuantity": 768,
@@ -436,16 +432,16 @@ CRITICAL: The product_details MUST be the complete object from cached data, not 
 DATA DISPLAY RULES:
 
 WHEN SHOWING PRODUCT LISTS:
-- Display ONLY: name_en and brand_en
-- Format: "1. name_en - brand_en"
+- Display ONLY: name_en and seller
+- Format: "1. name_en - seller"
 
 WHEN SHOWING SINGLE PRODUCT DETAILS:
 - Display ONLY: name_en, brand_en, specification_en, description_en.
 - Display a plain text with these fields clearly labeled but no bold or '**' formatting
 
 WORKFLOW:
-1. User gives product name or keywords → Use fetch_inventory_query to get products and show list with name_en and brand_en only
-2. User selects product by number → Show single product details with specified 5 fields only. Always go through cached data for details for any product user wants to see.
+1. User gives product name or keywords → Use fetch_inventory_query to get products and show list with name_en and seller only
+2. User selects product by number → Show single product details with specified 4 fields only. Always go through cached data for details for any product user wants to see.
 2.5 User gives another keyword which was not present in cache. Ask user if he wants to see products of that keyword, if user confirms and asks to search again →  if yes use fetch_inventory_query tool again with new keyword.
 3. User selects product → Show single product details with specified 4 fields only in a bulleted list with line breaks.
 4. User confirms product and request type → Call update_session_memory with COMPLETE product object
