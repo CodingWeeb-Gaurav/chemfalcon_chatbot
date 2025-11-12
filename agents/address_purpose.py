@@ -626,10 +626,11 @@ ACTUAL AVAILABLE DATA FROM API:
 WORKFLOW - FOLLOW EXACTLY:
 1. **ALWAYS start by calling get_cached_industries** to display ALL industries
 2. User selects industry by number (1-{len(cached_industries)}) → call select_industry with the EXACT _id and name_en from that index
-3. Auto-show addresses → call get_cached_addresses to display ALL addresses  
-4. User selects address by number → call select_address with COMPLETE address object
-5. Show final confirmation → call show_final_confirmation
-6. Place order when user explicitly confirms → call place_order_request
+3. Confirm the Industry selected
+4. Auto-show addresses → call get_cached_addresses to display ALL addresses  
+5. User selects address by number → call select_address with COMPLETE address object
+6. Show final confirmation → call show_final_confirmation
+7. Place order when user explicitly confirms → call place_order_request
 
 INDUSTRY SELECTION RULES:
 - Always show the COMPLETE industry list with ALL {len(cached_industries)} items no mater how long it is and correctly update the _id based on user selection. Do not put the selected index in session data.

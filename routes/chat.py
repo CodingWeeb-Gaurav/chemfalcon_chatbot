@@ -24,9 +24,9 @@ def normalize_language(language_input: str) -> str:
         "bangla": "bn", 
         "bengali": "bn",  # alias for bangla
         "english": "en",
-        "en": "en",  # already correct
-        "ar": "ar",  # already correct
-        "bn": "bn"   # already correct
+        "en": "en",  # In case frontend is modified to send ar, bn, en
+        "ar": "ar",  # 
+        "bn": "bn"   # 
     }
     
     if not language_input:
@@ -36,18 +36,18 @@ def normalize_language(language_input: str) -> str:
     return language_map.get(normalized_input, "en").lower()
 
 class ChatMessage(BaseModel):
-    sessionId: Optional[str] = None
+    sessionId: str # sessionID is mandatory for it to work
     userAuth: str
     message: str
     language: Optional[str] = "English"  # Frontend sends names by default
 
 @router.post("/")
 async def chat_endpoint(chat: ChatMessage):
-    session_id = chat.sessionId or str(uuid.uuid4())
+    session_id = chat.sessionId or str(uuid.uuid4()) #create sessionid if not exist (useless now)
     user_message = chat.message
     user_auth = chat.userAuth
     language_input = chat.language or "English"
-    
+
     # Check if user is authenticated
     if not user_auth or user_auth.strip() == "":
         logger.warning(f"❌ UNAUTHENTICATED ACCESS ATTEMPT - Session: {session_id}")
@@ -95,7 +95,7 @@ async def chat_endpoint(chat: ChatMessage):
         )
         
         if not ai_reply:
-            ai_reply = "Sorry, something went wrong. Please try again."
+            ai_reply = "Sorry, something went wrong in the Agent or Manager. Please try again."
             
     except Exception as e:
         logger.error(f"❌ Error in route_message: {e}")
