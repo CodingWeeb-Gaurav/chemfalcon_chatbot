@@ -60,6 +60,27 @@ class TranslationManager:
             'ex factory': {
                 'ar': 'التسليم من المصنع'
             },
+            # ADD CURRENCY TERMS TO PREVENT WRONG TRANSLATIONS
+            'bdt': {
+                'ar': 'تاكا بنغلاديشي'
+            },
+            'bangladeshi taka': {
+                'ar': 'تاكا بنغلاديشي'
+            },
+            'taka': {
+                'ar': 'تاكا'
+            },
+            'bdt (bangladeshi taka)': {
+                'ar': 'تاكا بنغلاديشي'
+            },
+            
+            # Add more currency protection
+            'price in bdt': {
+                'ar': 'السعر بالتاكا البنغلاديشي'
+            },
+            'bangladeshi taka (bdt)': {
+                'ar': 'تاكا بنغلاديشي'
+            },
             # 'lc': {
             #     'ar': 'نموذج خطاب الاعتماد الكامل'
             # },

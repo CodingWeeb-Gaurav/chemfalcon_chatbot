@@ -661,7 +661,7 @@ FIELD OPTIONS:
 - Incoterm: 1. Ex Factory (Ex Works or Delivery From Factory) 2. Deliver to Buyer Factory
 - Payment: 1. LC (Letter of Credit), 2. TT (Telegraphic transfer or Bank Transfer), 3. Cash
 - Packaging: 1. Bulk Tanker (in Truck), 2. PP Bag, 3. Jerry Can, 4. Drum
-
+- PPR requests Do not need Incoterm, Payment Method or Packaging preferece. So if user is placing a PPR. Never ask these fields. But if user is requesting Order/Sample/Quotation ask them.
 CURRENT PROGRESS:
 Completed: {len(completed_fields)}/{len(required_fields)} fields
 {format_progress(completed_fields, pending_fields, product_details)}
@@ -700,7 +700,7 @@ example:
 - When all fields complete, ask for check completion_status and hand over
 - You are unable to update any details except the required fields, if user asks to change other details (selected product or request(sample,order, quote)), politely refuse and tell them to refresh the session to start a new order.
 - After final confirmation from user side, and changing the session's agent to "address_purpose", you cannot make any more changes or place new orders. Because the third agent has taken over the chat. If the user still asks then tell them to refresh the session to start a new order.
-- All prices will be in Bangladesh Taka (BDT) only, If user says another currency, ask them to provide price converted in BDT only. If there is no currency mentioned, assume BDT.
+
 
 **TOOLS AVAILABLE:**
 - extract_and_validate_all_fields: Extract and validate ALL fields from user message (PREFERRED)
