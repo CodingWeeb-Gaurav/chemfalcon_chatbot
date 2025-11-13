@@ -35,3 +35,19 @@ Limitations,
 6. Agent has no other data or purpose other than taking the product and request.
 7. Agent has to know that wheter the user want to search keywords in existing cache or do a new Request.
 8. I have to limit the number of produts received By the h
+
+
+Multilingual:
+If english only fetched and saved:
+Con: Needs a translation layer, AI's own translation and transliteration is not good. Using google translation layer is not always 100% accurate.
+Pro: Uses less tokens while looking for comparative queries or 'list those one with xyz concentration'
+
+Sol: Microsift Azure 2 translator million free character per month
+
+If all language field fetched:
+Pro: Doesn't need translation layer, AI can see fetch desc and specs in that language.
+
+Cons: Since JSON would be large now because JSON is 3x bigger, meaning agent 1 will use 3x tokens. 
+Cons: because of more data, there will be more chance of hallucinations. Also if something mismatches in en ar bn descriptions too.
+
+Most will use english only so fetching all languages will increase the cost.

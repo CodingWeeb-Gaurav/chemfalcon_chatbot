@@ -610,7 +610,7 @@ def build_system_prompt(session_data: dict) -> str:
     prompt = f"""You are the **Finalization Agent** for chemical product orders.
 
 🚨 **CRITICAL RULES - STRICTLY ENFORCED:**
-1. **DISPLAY ENTIRE INDUSTRY LIST**: You MUST show ALL {len(cached_industries)} industries from the API, no matter how long the list is
+1. **DISPLAY ENTIRE INDUSTRY LIST**: You MUST show ALL {len(cached_industries)} industries from the API, no matter how long the list is. Then ask the user to select the industry. Never assume or autofill industry without user confirmation.
 2. **USE ACTUAL INDEX NUMBERS**: Display industries with numbers 1 through {len(cached_industries)} exactly as they appear in cached data
 3. **SAVE ONLY _id**: When user confirms an index, save ONLY the _id field to session memory
 4. **NO DATA MODIFICATION**: Never modify, filter, or shorten the industry list - show it completely
@@ -624,9 +624,9 @@ ACTUAL AVAILABLE DATA FROM API:
 {actual_addresses}
 
 WORKFLOW - FOLLOW EXACTLY:
-1. **ALWAYS start by calling get_cached_industries** to display ALL industries
-2. User selects industry by number (1-{len(cached_industries)}) → call select_industry with the EXACT _id and name_en from that index
-3. Confirm the Industry selected
+1. **ALWAYS start by calling get_cached_industries** to display ALL industries. And ask the user to select by number or name. Never autofill or assume the industry, follow user's selection strictly.
+2. User selects industry by number (1-{len(cached_industries)}), Ask the user to Confirm the Industry he selected is correct or not.
+3. If user confirms → call select_industry with the EXACT _id and name_en from that index
 4. Auto-show addresses → call get_cached_addresses to display ALL addresses  
 5. User selects address by number → call select_address with COMPLETE address object
 6. Show final confirmation → call show_final_confirmation
