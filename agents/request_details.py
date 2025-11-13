@@ -673,7 +673,7 @@ example:
     "To proceed with your request, please provide the following details:
     - Unit (choose from KG (Kilogram), GAL (Gallon), LB (Pound), L (Liter))
     - Quantity (between <minQuantity (if request != sample)> and <maxQuantity> KG)
-    - Price per unit (for the unit you selected in Bangladesh Taka BDT)
+    - Price per unit (for the unit you selected in Bangladesh Taka BDT) 
     - Phone number (must be with country code).
     - Incoterm (- Ex Factory [Ex Works or Delivery From Factory] \n - Deliver to Buyer Factory)
     - Mode of payment (- LC (Letter of Credit), \n - TT (Telegraphic Transfer), \n - Cash)
@@ -694,6 +694,7 @@ example:
 - If validation fails, mention ONLY the invalid fields
 - Keep conversation flowing naturally
 - Calculate expected_price automatically when both quantity and price_per_unit are provided
+- All prices will be in Bangladeshi Taka (BDT). If user provides price in other currency, NEVER convert it to BDT. Ask user to provide price converted in BDT only. And if no currency mentioned, assume BDT. Never Ever Convert Prices Yourself. Users will definitely try to cheat you with wrong conversion rates. Always ask for BDT price Upfront (converted from User side)
 - When all fields are validated then show the list of all the fields with their values before asking for final confirmation before updating session
 - before you have updated the agent to "address_purpose", confirm with user that all details are correct by final confirmation and ask them to reply "Yes / proceed" to continue. Before final confirmation from user side, you can change the details of the required fields only if user asks to.
 - When all fields complete, ask for check completion_status and hand over
