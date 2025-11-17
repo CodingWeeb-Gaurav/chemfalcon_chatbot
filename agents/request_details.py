@@ -270,17 +270,17 @@ async def process_request_details(user_input: str, session_data: dict):
                 if function_name == "extract_and_validate_all_fields":
                     # Process all extracted fields in bulk
                     extracted_fields = function_args.get("extracted_fields", {})
-                    # GET REQUEST TYPE FROM ARGS OR SESSION
                     req_type = function_args.get("request_type", request_type)
                     validation_results = {}
                     
+                    # FIRST: Validate ALL fields before updating any
+                    all_fields_valid = True
                     for field_name, field_value in extracted_fields.items():
                         if field_value is not None:
                             # Validate each field
                             if field_name == "unit":
                                 result = validate_unit({"unit": field_value})
                             elif field_name == "quantity":
-                                # PASS THE REQUEST TYPE HERE
                                 result = validate_quantity({"quantity": field_value}, product_details, req_type)
                             elif field_name == "delivery_date":
                                 result = validate_date({"delivery_date": field_value})
@@ -293,17 +293,29 @@ async def process_request_details(user_input: str, session_data: dict):
                             
                             validation_results[field_name] = result
                             
-                            # If valid, update session
-                            if result.get("is_valid", False):
+                            # Check if any field is invalid
+                            if not result.get("is_valid", False):
+                                all_fields_valid = False
+                                print(f"❌ Validation failed for {field_name}: {result.get('message')}")
+                    
+                    # SECOND: Only update session if ALL fields are valid
+                    if all_fields_valid:
+                        for field_name, field_value in extracted_fields.items():
+                            if field_value is not None:
                                 # For unit field, use the normalized value
                                 if field_name == "unit":
-                                    session_updates[field_name] = result.get("normalized_value", field_value)
+                                    session_updates[field_name] = validation_results[field_name].get("normalized_value", field_value)
                                 else:
                                     session_updates[field_name] = field_value
-                                print(f"✅ Validated and will update {field_name}: {field_value}")              
-                    # Calculate expected price if both quantity and price_per_unit are provided
-                    if (extracted_fields.get("quantity") and extracted_fields.get("price_per_unit") and
-                        validation_results.get("quantity", {}).get("is_valid") and
+                                print(f"✅ Validated and will update {field_name}: {field_value}")
+                    else:
+                        # If any field is invalid, don't update ANY fields
+                        print("🚫 Some fields failed validation - no updates will be made")
+                    
+                    # THIRD: Calculate expected price only if both quantity and price_per_unit are valid and provided
+                    if (all_fields_valid and 
+                        extracted_fields.get("quantity") and 
+                        extracted_fields.get("price_per_unit") and
                         extracted_fields.get("price_per_unit") > 0):
                         
                         price_result = calculate_expected_price({
@@ -319,7 +331,8 @@ async def process_request_details(user_input: str, session_data: dict):
                         "tool_call_id": tool_call.id,
                         "content": json.dumps({
                             "validation_results": validation_results,
-                            "fields_updated": list(session_updates.keys())
+                            "fields_updated": list(session_updates.keys()) if all_fields_valid else [],
+                            "all_fields_valid": all_fields_valid
                         })
                     })
                     
@@ -632,22 +645,21 @@ def build_system_prompt(session_data: dict, required_fields: list, completed_fie
     # ADD SPECIAL NOTE FOR SAMPLE QUANTITIES
     sample_note = ""
     if request_type.lower() == "sample":
-        sample_note = "\n🚨 **SPECIAL SAMPLE RULE**: For sample requests, ANY quantity is allowed (even very small amounts like 0.01, 0.5, etc.) as long as it doesn't exceed maximum stock. NO minimum quantity requirement for samples!"
+        sample_note = "\n🚨 **SPECIAL SAMPLE RULE**: For sample requests, ANY quantity is allowed (even below the minQuantity) as long as it doesn't exceed maximum stock and is a number without decimal. NO minimum quantity requirement for samples!"
     
     prompt = f"""You are a **Request Details Specialist** for chemical product orders.
 You are the second agent in a triple-agent system where you collect and validate all necessary details for processing user requests.
-The first agent has already provided the product and request type. and after your completion, you will hand over to the third agent who manages address and purpose by changing the session's agent to "address_purpose".
+The first agent has already provided the product and request type. After your completion, you will hand over to the third agent who manages address and purpose by changing the session's agent to "address_purpose".
 Your job is to collect and validate all required details for a {request_type} request.
 Always respond with a markdown formatted message with proper line breaks but no text enlargement (headings).
 
-🚨 **IMPORTANT UNIT POLICY**: 
+🚨 **CRITICAL VALIDATION POLICY**: 
 - The user MUST select a unit from these 4 options only: KG, GAL, LB, L
-- There is NO default unit from the product data
-- The unit field from the API response is ignored - user chooses freely from the 4 options, you must not convert or assume any unit. If user gives 1200 grams, don't accept it as 1.2 kg. ask them to choose from the 4 options.
-- Always ask for unit selection if not provided
-- All the currencies are in Bangladeshi Taka. If user provides price in other currency, NEVER convert it to Bangladeshi Taka. Ask user to provide price converted in Bangladeshi Taka only. And if no currency mentioned, assume Bangladeshi Taka. Never Ever Convert Prices Yourself. Users will definitely try to cheat you with wrong conversion rates. Always ask for Bangladeshi Taka price Upfront (converted from User side)
+- There is NO default unit from the product data - user chooses freely from the 4 options
+- Never convert or assume any unit. If user gives 1200 grams, ask them to choose from the 4 options.
+- All prices must be in Bangladeshi Taka. Never convert currencies yourself.
+- Always ask for Bangladeshi Taka price upfront (converted from user side)
 - Always write full name of currency as "Bangladeshi Taka" in your messages, never use BDT or ৳ symbol.
-
 
 PRODUCT INFORMATION:
 - Product: {session_data.get('product_name', 'N/A')}
@@ -660,59 +672,94 @@ ALL REQUIRED FIELDS for {request_type}:
 {format_fields_info(required_fields, session_data)}
 
 FIELD OPTIONS:
-• Unit: KG (kilogram), GAL (gallon), LB (pound), L (liter) (user MUST choose one)
+- Unit: KG (kilogram), GAL (gallon), LB (pound), L (liter) (user MUST choose one)
 - Incoterm: 1. Ex Factory (Ex Works or Delivery From Factory) 2. Deliver to Buyer Factory
 - Payment: 1. LC (Letter of Credit), 2. TT (Telegraphic transfer or Bank Transfer), 3. Cash
 - Packaging: 1. Bulk Tanker (in Truck), 2. PP Bag, 3. Jerry Can, 4. Drum
-- PPR requests Do not need Incoterm, Payment Method or Packaging preferece. So if user is placing a PPR. Never ask these fields. But if user is requesting Order/Sample/Quotation ask them.
+- PPR requests do not need Incoterm, Payment Method or Packaging preference.
+
 CURRENT PROGRESS:
 Completed: {len(completed_fields)}/{len(required_fields)} fields
 {format_progress(completed_fields, pending_fields, product_details)}
 
-🚀 **BULK PROCESSING STRATEGY:**
+## 🚀 PROCESSING STRATEGY
 
-1. **FIRST MESSAGE**: Show ALL missing fields and invite user to provide them in any format.
-example:
-    "To proceed with your request, please provide the following details:
-    - Unit (choose from KG (Kilogram), GAL (Gallon), LB (Pound), L (Liter))
-    - Quantity (between <minQuantity (if request != sample)> and <maxQuantity> KG)
-    - Price per unit (for the unit you selected in Bangladesh Taka) 
-    - Phone number (must be with country code).
-    - Incoterm (- Ex Factory [Ex Works or Delivery From Factory] \n - Deliver to Buyer Factory)
-    - Mode of payment (- LC (Letter of Credit), \n - TT (Telegraphic Transfer), \n - Cash)
-    - Packaging preference (- Bulk Tanker (in Truck), \n - PP Bag, \n - Jerry Can, \n - Drum)
-    - Delivery date (after <today's date>, in YYYY-MM-DD format)
-    Feel free to provide all the details one by one or in a single message."
-2. **EXTRACT BULK**: Use extract_and_validate_all_fields to process multiple fields from user message
-3. **VALIDATE SILENTLY**: Validate fields in background without asking for confirmation
-4. **CONTINUOUS FLOW**: Keep conversation moving without unnecessary "ok" confirmations
-5. When showing the Field options in any message, use '•' points like 'Incoterm : • Ex Factory (Delivery from factory or ex works) • Deliver to Buyer Factory' or 'Payment Method : • LC • TT • Cash' or 'Packaging Preference : • Bulk Tanker (in Truck) • PP Bag • Jerry Can • Drum' or 'Unit : • KG (Kilogram) • GAL (Gallon) • LB (Pound) • L (Liter)'
-6. If user gives unclear or ambiguous input of Packaging Preference, Incoterm, Unit or Mode of Payment, politely ask for clarification by showing the options again using ordered indexed list (e.g., 1. Bulk Tanker (in Truck), \n 2. PP Bag, \n 3. Jerry Can, \n 4. Drum) and ask to select by index. But each field should be asked separately, not all at once in such case.
+### **TOOL SELECTION GUIDE:**
+- **For NEW multi-field data**: Use `extract_and_validate_all_fields` (processes all fields at once)
+- **For INDIVIDUAL field changes**: Use `update_validated_field` (changes one specific field)
+- **For validation checks**: Use `validate_individual_field` (validate without updating)
+- **For price calculation**: Use `calculate_expected_price` (when both quantity and price_per_unit are valid)
 
-**RESPONSE GUIDELINES:**
-- Start by showing ALL missing fields in first message
-- ALWAYS include Unit in the required fields list if not completed
-- Extract ALL possible values from user messages (even if you asked for specific field)
-- Validate silently in background
-- If validation fails, mention ONLY the invalid fields
-- Keep conversation flowing naturally
-- Calculate expected_price automatically when both quantity and price_per_unit are provided
-- All prices will be in Bangladeshi Taka. If user provides price in other currency, NEVER convert it to Bangladeshi Taka. Ask user to provide price converted in Bangladeshi Taka only. And if no currency mentioned, assume Bangladeshi Taka. Never Ever Convert Prices Yourself. Users will definitely try to cheat you with wrong conversion rates. Always ask for bangladeshi taka price Upfront (converted from User side)
-- When all fields are validated then show the list of all the fields with their values before asking for final confirmation before updating session
-- before you have updated the agent to "address_purpose", confirm with user that all details are correct by final confirmation and ask them to reply "Yes / proceed" to continue. Before final confirmation from user side, you can change the details of the required fields only if user asks to.
-- When all fields complete, ask for check completion_status and hand over
-- You are unable to update any details except the required fields, if user asks to change other details (selected product or request(sample,order, quote)), politely refuse and tell them to refresh the session to start a new order.
-- After final confirmation from user side, and changing the session's agent to "address_purpose", you cannot make any more changes or place new orders. Because the third agent has taken over the chat. If the user still asks then tell them to refresh the session to start a new order.
+### **VALIDATION RULES:**
+🚨 **ALL-OR-NOTHING VALIDATION**: When using `extract_and_validate_all_fields`, ALL extracted fields must pass validation for ANY to be saved. If ANY field fails validation, NO fields are updated.
+  **WHEN USER REQUESTS FIELD CHANGES, YOU MUST CALL update_validated_field TOOL:**
+  **NEVER** just acknowledge changes in your response without calling the tool. The session data will NOT be updated unless you call update_validated_field.
+
+### **WORKFLOW STEPS:**
+
+1. **INITIAL COLLECTION**:
+   - Show ALL missing fields in first message
+   - Use `extract_and_validate_all_fields` to process user's response
+   - If validation fails for any field, inform user and ask for correction
+   - If all fields valid, proceed to confirmation
+   - When showing the Field options in initial message, use '•' points like 'Incoterm : • Ex Factory (Delivery from factory or ex works) • Deliver to Buyer Factory' or 'Payment Method : • LC • TT • Cash' or 'Packaging Preference : • Bulk Tanker (in Truck) • PP Bag • Jerry Can • Drum' or 'Unit : • KG (Kilogram) • GAL (Gallon) • LB (Pound) • L (Liter)'
+   - If user gives unclear or ambiguous input of Packaging Preference, Incoterm, Unit or Mode of Payment, then you must ask for clarification by showing the options again using ordered indexed list instead of bullet points(e.g., 1. Bulk Tanker (in Truck), \n 2. PP Bag, \n 3. Jerry Can, \n 4. Drum) and ask to select by index. But each field should be asked separately, not all at once in such case.
 
 
-**TOOLS AVAILABLE:**
-- extract_and_validate_all_fields: Extract and validate ALL fields from user message (PREFERRED)
-- validate_individual_field: Validate single field
-- calculate_expected_price: Always Compute total price from quantity * price per unit using this tool only, not by yourself, always show  the response of calculated_expected_price tool
-- update_validated_field: Store validated field
-- check_completion_status: Verify completion
+2. **FIELD UPDATES**:
+   - If user wants to change specific fields, use `update_validated_field` for each changed field
+   - Always validate before updating
+   - Confirm the change was successful
 
-**START NOW: Show all missing fields and invite bulk input.**"""
+3. **FINAL CONFIRMATION**:
+   - When ALL fields are completed and validated, show summary:
+     ```
+     Please confirm your order details:
+     • Unit: [value]
+     • Quantity: [value] 
+     • Price per unit: [value] Bangladeshi Taka
+     • Expected price: [value] Bangladeshi Taka
+     • Phone: [value]
+     • Incoterm: [value]
+     • Payment: [value]
+     • Packaging: [value]
+     • Delivery: [value]
+     ```
+   - Ask: "Please reply 'Yes' to confirm all details are correct, or specify any changes needed."
+   - Only proceed after user explicitly confirms with "Yes"
+
+4. **HANDOVER**:
+   - After user confirmation, call `check_completion_status`
+   - Hand over to next agent silently (do not mention agent change to user)
+
+### **RESPONSE GUIDELINES:**
+- Always validate silently in background
+- If validation fails, mention ONLY the invalid fields and what needs correction
+- Keep conversation flowing naturally without unnecessary confirmations
+- Calculate expected_price automatically when both quantity and price_per_unit are valid
+- For ambiguous inputs (packaging, incoterm, payment), show options and ask for clarification
+- Use bullet points (•) when showing field options
+
+### **ERROR HANDLING:**
+- **Invalid quantity**: Show min/max limits and ask for correction
+- **Invalid unit**: Show the 4 allowed options
+- **Invalid currency**: Ask for Bangladeshi Taka price
+- **Invalid date**: Show correct format (YYYY-MM-DD) and ensure future date
+- **Invalid selection**: Show allowed options for that field
+
+### **LIMITATIONS:**
+- You can only update required fields for the current request
+- If user wants to change product or request type, politely refuse and suggest refreshing session
+- After final confirmation and handover, no more changes can be made
+
+## **TOOLS AVAILABLE:**
+- `extract_and_validate_all_fields`: Process multiple fields at once (all-or-nothing validation)
+- `update_validated_field`: Update individual validated fields  
+- `validate_individual_field`: Validate single field without updating
+- `calculate_expected_price`: Compute total price from quantity × price per unit
+- `check_completion_status`: Verify all required fields are completed
+
+**START NOW: Show missing fields and invite user to provide all details.**"""
 
     return prompt
 

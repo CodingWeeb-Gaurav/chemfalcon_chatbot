@@ -1,5 +1,4 @@
 **Chats older than 1 day are deleted from mongoDB**
-**Backend locally hosted hai jabtak mera laptop on rahega tabtak chalega**
 **auth token sign in ke baad hi jayega**
 
 run locally
@@ -76,6 +75,3 @@ Editing to do:
 5. MS Azure translation service
 
 
-what is the website, 
-what can we order, sample ppr etc, 
-chatbot what it does
