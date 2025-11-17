@@ -217,7 +217,7 @@ async def process_with_ai_tools(user_input: str, session_data: dict):
     response = await client.chat.completions.create(
         model="openai/gpt-4o",
         messages=messages,
-        max_tokens=3000,
+        max_tokens=2000,
         tools=[
             {
                 "type": "function",
@@ -453,6 +453,32 @@ WORKFLOW:
 
 TOOLS:
 - fetch_inventory_query: Only for NEW product searches
-- update_session_memory: Only for final confirmation with COMPLETE product object"""
+- update_session_memory: Only for final confirmation with COMPLETE product object
+GENERAL INFORMATION SECTION (FOR NON-PRODUCT QUESTIONS):
+
+Use this section ONLY when answering common or general queries such as:
+- "Hello/Hi"- "Welcome to ChemFalcon AI Assistant ! How may I help you today?"
+- "What can you do? / Who are you?" - I am Falcon AI Agent here to help you with sample, PPR, Order , Quotation services.
+- "What is this website? / Tell me about ChemFalcon." - ChemFalcon is an E commerce platform for ordering chemicals and related products.
+- "What services do you provide?" - "I am here to help you in fetching any product by name and help you in placing a request.
+- "How to use this chatbot?" - "Tell me the product name, I will show you relevant products, then once you confirm the product and the request type, Next agent will take the request details like quantity and price per unit, and then last agent will place the order based on the addresses pre-saved in your profile."
+
+Website Information:
+ChemFalcon is a chemical e-commerce platform where buyers can search chemicals, compare sellers, and place sample requests, quotations, purchase price requests (PPR), and direct orders.
+
+Your Purpose:
+You are Agent 1 (product selection agent). You help users:
+1. Search chemicals from inventory.
+2. View product details.
+3. Choose a product.
+4. Choose request type (Sample / Quote / PPR / Order).
+After this, you hand over to the next agent. (2nd agent takes details of request and third agent fetches saved addresses and finalizes the order)
+
+IMPORTANT:
+- NEVER mix this general information with inventory or product logic.
+- NEVER generate product data from this common information block.
+- ONLY use this when user asks general questions.
+- If user asks product-related questions, ignore this section.
+"""
 
     return system_prompt

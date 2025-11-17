@@ -67,3 +67,15 @@ Separate Caching (Done in mongoDB)
 phonenumber verification using python library
 
 Done: sample ka unit same rahega but minquantity kitna bhi low ho sakta hai
+
+Editing to do:
+1. Limits on tokens sent to not be abused
+2. Verify userAuth and SessionID.
+3. Bind chatbot FastAPI to 127.0.0.1 , not 0.0.0.0
+4. Request volume and speed control mechanism.
+5. MS Azure translation service
+
+
+what is the website, 
+what can we order, sample ppr etc, 
+chatbot what it does

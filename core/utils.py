@@ -1,10 +1,13 @@
 # core/utils.py also manages translation with enhanced logging
-
+# 25 translation request per minute, with a queue to avoid IP getting blocked by google
 import logging
 import re
 import json
+import asyncio
+import time
+from collections import deque
 from deep_translator import GoogleTranslator
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 import colorama
 from colorama import Fore, Back, Style
 import datetime
@@ -19,6 +22,112 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+class TranslationQueue:
+    """
+    Manages translation requests with queuing and rate limiting
+    Prevents parallel requests and enforces max 25 translations per minute
+    """
+    
+    def __init__(self, max_requests_per_minute: int = 25):
+        self.max_requests_per_minute = max_requests_per_minute
+        self.request_times = deque()
+        self.queue = asyncio.Queue()
+        self.processing = False
+        self.processing_lock = asyncio.Lock()
+        self.worker_task = None
+        self.start_worker()
+    
+    def start_worker(self):
+        """Start the background worker to process translation requests"""
+        if self.worker_task is None or self.worker_task.done():
+            self.worker_task = asyncio.create_task(self._process_queue())
+    
+    async def _process_queue(self):
+        """Background worker to process translation requests from the queue"""
+        while True:
+            try:
+                # Get next request from queue
+                future, source_lang, target_lang, text, session_id = await self.queue.get()
+                
+                # Wait for rate limiting
+                await self._wait_for_rate_limit()
+                
+                # Perform the translation
+                try:
+                    if source_lang == 'en':
+                        result = GoogleTranslator(source='en', target=target_lang).translate(text)
+                    else:
+                        result = GoogleTranslator(source=source_lang, target='en').translate(text)
+                    
+                    # Set the result
+                    future.set_result(result)
+                    
+                except Exception as e:
+                    # Set exception if translation fails
+                    future.set_exception(e)
+                
+                # Mark task as done
+                self.queue.task_done()
+                
+                # Update rate limiting
+                self._update_request_times()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"{Fore.RED}❌ Translation queue worker error: {e}")
+                await asyncio.sleep(1)  # Prevent tight loop on errors
+    
+    async def _wait_for_rate_limit(self):
+        """Wait if we've reached the rate limit"""
+        while True:
+            now = time.time()
+            
+            # Remove requests older than 1 minute
+            while self.request_times and self.request_times[0] < now - 60:
+                self.request_times.popleft()
+            
+            # Check if we can proceed
+            if len(self.request_times) < self.max_requests_per_minute:
+                break
+            
+            # Wait for the oldest request to expire
+            wait_time = self.request_times[0] - (now - 60)
+            if wait_time > 0:
+                logger.info(f"{Fore.YELLOW}⏳ Rate limit reached. Waiting {wait_time:.1f}s...")
+                await asyncio.sleep(wait_time)
+    
+    def _update_request_times(self):
+        """Update the request times for rate limiting"""
+        now = time.time()
+        self.request_times.append(now)
+    
+    async def add_translation_request(self, source_lang: str, target_lang: str, text: str, session_id: str = "") -> str:
+        """
+        Add a translation request to the queue and wait for result
+        """
+        # Create a future for the result
+        future = asyncio.Future()
+        
+        # Add to queue
+        await self.queue.put((future, source_lang, target_lang, text, session_id))
+        
+        # Log queue status
+        queue_size = self.queue.qsize()
+        if queue_size > 0:
+            logger.info(f"{Fore.CYAN}📊 Translation queue size: {queue_size} | Session: {session_id}")
+        
+        # Wait for the result
+        return await future
+    
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """Get current queue statistics"""
+        return {
+            'queue_size': self.queue.qsize(),
+            'recent_requests': len(self.request_times),
+            'max_requests_per_minute': self.max_requests_per_minute
+        }
 
 class TranslationManager:
     """
@@ -37,6 +146,9 @@ class TranslationManager:
         
         # Initialize translation memory - ARABIC ONLY
         self._translation_memory = self._initialize_translation_memory()
+        
+        # Initialize translation queue
+        self.translation_queue = TranslationQueue(max_requests_per_minute=25)
     
     def _initialize_translation_memory(self) -> Dict[str, Dict[str, str]]:
         """
@@ -44,6 +156,11 @@ class TranslationManager:
         Structure: { 'english_term': { 'ar': 'arabic_translation' } }
         """
         return {
+            '<!-- R3S3T_S322I0N -->': {
+            'ar': '<!-- R3S3T_S322I0N -->',
+            'bn': '<!-- R3S3T_S322I0N -->', 
+            'en': '<!-- R3S3T_S322I0N -->'
+            },
             # Client-provided Arabic translations
             'sample': {
                 'ar': 'العينة'
@@ -81,12 +198,6 @@ class TranslationManager:
             'bangladeshi taka (bdt)': {
                 'ar': 'تاكا بنغلاديشي'
             },
-            # 'lc': {
-            #     'ar': 'نموذج خطاب الاعتماد الكامل'
-            # },
-            # 'tt': {
-            #     'ar': 'نموذج خطاب الاعتماد الكامل'
-            # }
         }
     
     def _normalize_term(self, term: str) -> str:
@@ -101,10 +212,11 @@ class TranslationManager:
             'ex factory': 'ex factory',
             'ex-factory': 'ex factory', 
             'ex works': 'ex factory',
+            'ex-works' : 'ex factory',
             'bulk tanker': 'bulk tanker',
             'bulk-tanker': 'bulk tanker',
-            'bulk carrier': 'bulk carrier',
-            'bulk-carrier': 'bulk carrier',
+            'bulk carrier': 'bulk tanker',
+            'bulk-carrier': 'bulk tanker',
             'tt': 'tt',
             't.t': 'tt',
             'telegraphic transfer': 'tt',
@@ -267,6 +379,7 @@ class TranslationManager:
     async def translate_to_english(self, text: str, source_lang: str, session_id: str = "") -> str:
         """
         Translate any text to English with enhanced logging and translation memory
+        Uses queuing system to prevent parallel requests and rate limiting
         """
         if source_lang == 'en':
             return text
@@ -284,8 +397,13 @@ class TranslationManager:
             if memory_applied:
                 logger.info(f"{Fore.YELLOW}🔄 REVERSE TRANSLATION MEMORY: {memory_applied}")
             
-            # Translate the processed text
-            translated = GoogleTranslator(source=source_lang, target='en').translate(processed_text)
+            # Use queuing system for translation
+            translated = await self.translation_queue.add_translation_request(
+                source_lang=source_lang, 
+                target_lang='en', 
+                text=processed_text, 
+                session_id=session_id
+            )
             
             # Log the translation flow with memory info
             self._log_translation_flow(text, translated, "to_english", session_id, memory_applied)
@@ -301,6 +419,7 @@ class TranslationManager:
         """
         Translate English text to target language with enhanced logging
         PRESERVES language-specific fields and applies translation memory AFTER translation (Arabic only)
+        Uses queuing system to prevent parallel requests and rate limiting
         """
         if target_lang == 'en':
             return english_text
@@ -315,8 +434,13 @@ class TranslationManager:
             if preserved_fields:
                 logger.info(f"{Fore.MAGENTA}🛡️  PRESERVING {len(preserved_fields)} {target_lang.upper()} FIELDS: {list(preserved_fields.keys())}")
             
-            # Step 2: Translate the cleaned text FIRST (without memory interference)
-            translated_cleaned = GoogleTranslator(source='en', target=target_lang).translate(cleaned_text)
+            # Step 2: Use queuing system for translation
+            translated_cleaned = await self.translation_queue.add_translation_request(
+                source_lang='en', 
+                target_lang=target_lang, 
+                text=cleaned_text, 
+                session_id=session_id
+            )
             
             # Step 3: Apply translation memory AFTER main translation (Arabic only)
             memory_corrected_text, memory_applied = self._apply_translation_memory_after_translation(translated_cleaned, target_lang)
@@ -362,6 +486,10 @@ class TranslationManager:
             'terms': list(self._translation_memory.keys())
         }
     
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """Get translation queue statistics"""
+        return self.translation_queue.get_queue_stats()
+    
     def validate_language(self, language: str) -> bool:
         """
         Check if language is supported
@@ -391,6 +519,10 @@ def add_translation_memory_entry(english_term: str, arabic_translation: str = No
 def get_translation_memory_stats() -> Dict[str, Any]:
     """Get translation memory statistics"""
     return translator.get_translation_memory_stats()
+
+def get_translation_queue_stats() -> Dict[str, Any]:
+    """Get translation queue statistics"""
+    return translator.get_queue_stats()
 
 def log_chat_session_start(session_id: str, language: str, user_message: str):
     """Log the start of a chat session"""
